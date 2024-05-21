@@ -18,4 +18,4 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
             v_caches[block_id][token_loc] = v_states[state_idx]
             token_loc = (token_loc + 1) % block_size
             block_idx = block_idx if token_loc else block_idx + 1
-            block_id = block_id if token_loc else block_offsets[i][block_idx]
+            block_id = block_offsets[i][block_idx]

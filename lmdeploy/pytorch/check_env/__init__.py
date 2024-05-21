@@ -60,7 +60,7 @@ def check_env():
     logger = get_logger('lmdeploy')
     logger.info('Checking environment for PyTorch Engine.')
     check_env_torch()
-    check_env_triton()
+    # check_env_triton()
 
 
 MIN_TRANSFORMERS_VERSION = '4.33.0'

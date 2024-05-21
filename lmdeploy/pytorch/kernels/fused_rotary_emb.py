@@ -1,5 +1,14 @@
 import torch
 from torch import Tensor
+import deeplink_ext.cpp_extensions as ext
+
+
+def rotary_emb(q, cos, sin, out_q):
+    out_q = q if out_q is None else out_q
+    seq_len, _, dim = q.shape
+    cos_view = cos.view([seq_len, 1, dim // 2])
+    sin_view = sin.view([seq_len, 1, dim // 2])
+    ext.apply_rotary(out_q, q, cos_view, sin_view, False, False)
 
 
 def fused_rotary_emb(q: Tensor,
@@ -9,33 +18,10 @@ def fused_rotary_emb(q: Tensor,
                      scaling_factor: float,
                      out_q: Tensor = None,
                      out_k: Tensor = None):
-    """Fuse `rotary_embedding` and `apply_rotary_pos_emb`."""
-    if out_q is None:
-        out_q = torch.empty_like(q)
-    else:
-        assert q.stride() == out_q.stride()
-    if out_k is None:
-        out_k = torch.empty_like(k)
-    else:
-        assert k.stride() == out_k.stride()
-    _, seq_len, _, _ = q.size()
-    for i in range(seq_len):
-        position_id = position_ids[:, i] / scaling_factor
-        pos_freq = position_id * inv_freq
-        cos = torch.cos(pos_freq).to(q.dtype)
-        sin = torch.sin(pos_freq).to(q.dtype)
-        _, seq_len, _, dim = q.shape
-        q0 = q[:, i, :, 0: dim // 2]
-        q1 = q[:, i, :, dim // 2: dim]
-        out_q0 = q0 * cos - q1 * sin
-        out_q1 = q0 * sin + q1 * cos
-        out_q[:, i] = torch.cat((out_q0, out_q1), dim=-1)
-
-        _, seq_len, _, dim = k.shape
-        k0 = k[:, i, :, 0: dim // 2]
-        k1 = k[:, i, :, dim // 2: dim]
-        out_k0 = k0 * cos - k1 * sin
-        out_k1 = k0 * sin + k1 * cos
-        out_k[:, i] = torch.cat((out_k0, out_k1), dim=-1)
-
+    position_ids = position_ids.unsqueeze(-1)
+    pos_freq = position_ids / scaling_factor * inv_freq
+    cos = torch.cos(pos_freq).to(q.dtype)
+    sin = torch.sin(pos_freq).to(q.dtype)
+    rotary_emb(q, cos, sin, out_q)
+    rotary_emb(k, cos, sin, out_k)
     return out_q, out_k

@@ -281,7 +281,7 @@ class AsyncEngine:
                  prompts: Union[List[str], str, List[Dict], List[List[Dict]]],
                  gen_config: Optional[GenerationConfig] = None,
                  request_output_len=512,
-                 top_k: int = 40,
+                 top_k: int = 1,
                  top_p: float = 0.8,
                  temperature: float = 0.8,
                  repetition_penalty: float = 1.0,

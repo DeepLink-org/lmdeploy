@@ -59,7 +59,8 @@ def _update_cache_config(model_config: ModelConfig,
     def __get_free_gpu_mem_size(cache_block_size: int):
         """get free gpu memory size."""
         torch.cuda.empty_cache()
-        gpu_mem_physical_free, _ = get_gpu_memory(gpu_id)
+        # gpu_mem_physical_free, _ = get_gpu_memory(gpu_id)
+        gpu_mem_physical_free = host_mem_size
         logger.debug(f'device<{gpu_id}> free gpu memory:'
                      f' {gpu_mem_physical_free>>20} mb')
         vocal_size = model_config.vocab_size
@@ -298,10 +299,16 @@ class StepContext:
             attention_mask = torch.ones_like(q_seq_length)[:, None]
             position_ids = history_lengths.unsqueeze(-1)
         else:
+            q_seq_length = q_seq_length.cpu()
             q_start_loc = q_seq_length.cumsum(0) - q_seq_length
+            q_seq_length = q_seq_length.cuda()
+            q_start_loc = q_start_loc.cuda()
             mask_range = torch.arange(max_q_seq_length, device=device)[None, :]
             attention_mask = (mask_range < q_seq_length[:, None]).long()
+            attention_mask = attention_mask.cpu()
             position_ids = attention_mask.long().cumsum(-1) - 1
+            attention_mask = attention_mask.cuda()
+            position_ids = position_ids.cuda()
             position_ids += history_lengths.unsqueeze(-1)
 
         # position ids 1d
@@ -880,12 +887,14 @@ def _start_tp_process(proc_id: int,
         args (List): The arguments of the func.
         kwargs (Dict): The keyword arguments of the func.
     """
+    import torch_dipu
     rank = proc_id + 1
     try:
         dist.init_process_group('nccl',
                                 rank=rank,
                                 world_size=world_size,
                                 timeout=timedelta(days=35600))
+        torch.cuda.set_device(rank)
         with torch.cuda.device(rank), torch.inference_mode():
             args = args or tuple()
             kwargs = kwargs or dict()

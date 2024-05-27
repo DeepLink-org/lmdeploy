@@ -74,10 +74,7 @@ def _filter_topp_sorted(scores: torch.Tensor,
                         inplace: bool = True):
     """filter topp on sorted scores."""
     softmax_scores = scores.softmax(-1)
-    softmax_scores = softmax_scores.cpu()
     cum_scores = softmax_scores.cumsum(1) - softmax_scores
-    softmax_scores = softmax_scores.cuda()
-    cum_scores = cum_scores.cuda()
     mask = cum_scores > topp[:, None]
     mask[:, 0] = False  # keep at least one
     if inplace:

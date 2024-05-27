@@ -1,21 +1,23 @@
+import torch
+import deeplink_ext.cpp_extensions as ext
 from torch import Tensor
+from torch.autograd.profiler import record_function
 
 
+@record_function("mark_fill_kv_cache")
+@torch.no_grad()
 def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
                   v_caches: Tensor, q_start_loc: Tensor, q_seq_length: Tensor,
                   kv_seq_length: Tensor, max_q_seq_length: int,
-                  block_offsets: Tensor):
+                  block_offsets: Tensor, kv_start_indices: Tensor):
     """fill key/value state to cache for paged attention."""
-    _, block_size, _, _ = k_caches.size()
-    for i in range(q_start_loc.size(0)):
-        history_seqlen = kv_seq_length[i] - q_seq_length[i]
-        block_idx = history_seqlen // block_size
-        block_id = block_offsets[i][block_idx]
-        token_loc = history_seqlen % block_size
-        for offset in range(q_seq_length[i]):
-            state_idx = q_start_loc[i] + offset
-            k_caches[block_id][token_loc] = k_states[state_idx]
-            v_caches[block_id][token_loc] = v_states[state_idx]
-            token_loc = (token_loc + 1) % block_size
-            block_idx = block_idx if token_loc else block_idx + 1
-            block_id = block_offsets[i][block_idx]
+    dest_index_copy_kv(k_states, kv_start_indices, k_caches)
+    dest_index_copy_kv(v_states, kv_start_indices, v_caches)
+
+
+@torch.no_grad()
+def dest_index_copy_kv(states, dest_loc, caches):
+    block_num, block_size, head, dim = caches.size()
+    caches_tmp = caches.view(block_num * block_size, head, dim)
+    ext.dest_index_copy_kv(states, dest_loc, caches_tmp)
+    caches[:] = caches_tmp.view(block_num, block_size, head, dim)

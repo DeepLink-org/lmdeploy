@@ -4,6 +4,7 @@ import torch
 import math
 import deeplink_ext.cpp_extensions as ext
 from torch import Tensor
+from torch.autograd.profiler import record_function
 
 
 mask_cache = {}
@@ -77,6 +78,8 @@ def paged_token_attention(q, k_cache, v_cache, out, b_seq_len, block_table:torch
     return out
 
 
+@record_function("mark_paged_attention_fwd")
+@torch.no_grad()
 def paged_attention_fwd(
     query_states: Tensor,
     key_states: Tensor,

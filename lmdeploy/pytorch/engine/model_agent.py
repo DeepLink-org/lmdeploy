@@ -60,7 +60,7 @@ def _update_cache_config(model_config: ModelConfig,
         """get free gpu memory size."""
         torch.cuda.empty_cache()
         # gpu_mem_physical_free, _ = get_gpu_memory(gpu_id)
-        gpu_mem_physical_free = host_mem_size
+        gpu_mem_physical_free = torch.cuda.memory_reserved(gpu_id)
         logger.debug(f'device<{gpu_id}> free gpu memory:'
                      f' {gpu_mem_physical_free>>20} mb')
         vocal_size = model_config.vocab_size
@@ -268,6 +268,7 @@ class StepContext:
     world_size: int = 1
     local_adapter_ids: torch.LongTensor = None
     adapter_params: Dict[str, AdapterInfo] = None
+    kv_start_indices: torch.LongTensor = None
 
     _outputs: Dict = field(default_factory=dict)
 
@@ -299,16 +300,10 @@ class StepContext:
             attention_mask = torch.ones_like(q_seq_length)[:, None]
             position_ids = history_lengths.unsqueeze(-1)
         else:
-            q_seq_length = q_seq_length.cpu()
             q_start_loc = q_seq_length.cumsum(0) - q_seq_length
-            q_seq_length = q_seq_length.cuda()
-            q_start_loc = q_start_loc.cuda()
             mask_range = torch.arange(max_q_seq_length, device=device)[None, :]
             attention_mask = (mask_range < q_seq_length[:, None]).long()
-            attention_mask = attention_mask.cpu()
             position_ids = attention_mask.long().cumsum(-1) - 1
-            attention_mask = attention_mask.cuda()
-            position_ids = position_ids.cuda()
             position_ids += history_lengths.unsqueeze(-1)
 
         # position ids 1d
@@ -327,6 +322,19 @@ class StepContext:
         if inputs.adapter_info is not None:
             adapter_params = inputs.adapter_info.split_by_targets()
 
+        kv_start_indices = []
+        for i in range(q_start_loc.size(0)):
+            history_length = inputs.history_lengths[i]
+            block_idx = history_length // cache_config.block_size
+            block_loc = inputs.block_offsets[i][block_idx]
+            token_loc = history_length % cache_config.block_size
+            for _ in range(q_seq_length[i]):
+                kv_start_indices.append(block_loc * cache_config.block_size + token_loc)
+                token_loc = (token_loc + 1) % cache_config.block_size
+                block_idx = block_idx if token_loc else block_idx + 1
+                block_loc = inputs.block_offsets[i][block_idx]
+        kv_start_indices = torch.tensor(kv_start_indices, device="cuda")
+
         ret = StepContext(inputs=inputs,
                           block_offsets=inputs.block_offsets,
                           position_ids=position_ids,
@@ -342,7 +350,8 @@ class StepContext:
                           is_decoding=inputs.is_decoding,
                           world_size=world_size,
                           local_adapter_ids=inputs.local_adapter_ids,
-                          adapter_params=adapter_params)
+                          adapter_params=adapter_params,
+                          kv_start_indices=kv_start_indices)
         return ret
 
     @classmethod

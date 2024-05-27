@@ -1,16 +1,11 @@
 import torch
 from torch import Tensor
 import deeplink_ext.cpp_extensions as ext
+from torch.autograd.profiler import record_function
 
 
-def rotary_emb(q, cos, sin, out_q):
-    out_q = q if out_q is None else out_q
-    seq_len, _, dim = q.shape
-    cos_view = cos.view([seq_len, 1, dim // 2])
-    sin_view = sin.view([seq_len, 1, dim // 2])
-    ext.apply_rotary(out_q, q, cos_view, sin_view, False, False)
-
-
+@record_function("mark_fused_rotary_emb")
+@torch.no_grad()
 def fused_rotary_emb(q: Tensor,
                      k: Tensor,
                      position_ids: torch.LongTensor,
@@ -20,8 +15,7 @@ def fused_rotary_emb(q: Tensor,
                      out_k: Tensor = None):
     position_ids = position_ids.unsqueeze(-1)
     pos_freq = position_ids / scaling_factor * inv_freq
-    cos = torch.cos(pos_freq).to(q.dtype)
-    sin = torch.sin(pos_freq).to(q.dtype)
-    rotary_emb(q, cos, sin, out_q)
-    rotary_emb(k, cos, sin, out_k)
-    return out_q, out_k
+    cos = torch.cos(pos_freq).view(1, position_ids.shape[0], 1, -1).repeat(1,1,1,2).to(q.dtype)
+    sin = torch.sin(pos_freq).view(1, position_ids.shape[0], 1, -1).repeat(1,1,1,2).to(q.dtype)
+    ext.rotary_embedding_v2(q, k, cos, sin)
+    return q, k

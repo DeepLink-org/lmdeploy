@@ -1,8 +1,11 @@
 import torch
 from torch import Tensor
 import deeplink_ext.cpp_extensions as ext
+from torch.autograd.profiler import record_function
 
 
+@record_function("mark_rms_norm")
+@torch.no_grad()
 def rms_norm(hidden_states: Tensor, weight: Tensor, eps: float = 1e-6):
     output = torch.empty_like(hidden_states)
     inv_rms_shape = list(hidden_states.shape[:-1]) + [1]

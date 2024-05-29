@@ -190,7 +190,7 @@ class LlamaAttention(nn.Module):
             kv_seq_length=kv_seq_length,
             max_q_seq_length=max_q_seq_length,
             block_offsets=block_offsets,
-            kv_start_indices=context.kv_start_indices,
+            **context.kwargs,
         )
 
         attn_output = query_states
@@ -344,13 +344,9 @@ class LlamaModel(nn.Module):
         **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """Rewrite of LlamaModel.forward."""
-        import torch_dipu
-        path = f"/data2/yaofengchen/demo/lmdeploy_demo/dipu_profile"
-        context = torch_dipu.profiler.NativeProfile(path, False)
-        with context:
-            return self._continuous_batching_forward(
-                input_ids,
-                position_ids,
-                past_key_values,
-                inputs_embeds,
-            )
+        return self._continuous_batching_forward(
+            input_ids,
+            position_ids,
+            past_key_values,
+            inputs_embeds,
+        )

@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List
 
 import torch
 import torch.distributed as dist
+from torch import Tensor
 from torch import multiprocessing as mp
 from transformers import AutoModelForCausalLM
 
@@ -59,8 +60,7 @@ def _update_cache_config(model_config: ModelConfig,
     def __get_free_gpu_mem_size(cache_block_size: int):
         """get free gpu memory size."""
         torch.cuda.empty_cache()
-        # gpu_mem_physical_free, _ = get_gpu_memory(gpu_id)
-        gpu_mem_physical_free = torch.cuda.memory_reserved(gpu_id)
+        gpu_mem_physical_free = host_mem_size
         logger.debug(f'device<{gpu_id}> free gpu memory:'
                      f' {gpu_mem_physical_free>>20} mb')
         vocal_size = model_config.vocab_size
@@ -268,7 +268,7 @@ class StepContext:
     world_size: int = 1
     local_adapter_ids: torch.LongTensor = None
     adapter_params: Dict[str, AdapterInfo] = None
-    kv_start_indices: torch.LongTensor = None
+    kwargs: Dict = None
 
     _outputs: Dict = field(default_factory=dict)
 
@@ -322,18 +322,7 @@ class StepContext:
         if inputs.adapter_info is not None:
             adapter_params = inputs.adapter_info.split_by_targets()
 
-        kv_start_indices = []
-        for i in range(q_start_loc.size(0)):
-            history_length = inputs.history_lengths[i]
-            block_idx = history_length // cache_config.block_size
-            block_loc = inputs.block_offsets[i][block_idx]
-            token_loc = history_length % cache_config.block_size
-            for _ in range(q_seq_length[i]):
-                kv_start_indices.append(block_loc * cache_config.block_size + token_loc)
-                token_loc = (token_loc + 1) % cache_config.block_size
-                block_idx = block_idx if token_loc else block_idx + 1
-                block_loc = inputs.block_offsets[i][block_idx]
-        kv_start_indices = torch.tensor(kv_start_indices, device="cuda")
+        kwargs = cls.new_kwargs(inputs,  device, cache_config, q_start_loc)
 
         ret = StepContext(inputs=inputs,
                           block_offsets=inputs.block_offsets,
@@ -351,7 +340,7 @@ class StepContext:
                           world_size=world_size,
                           local_adapter_ids=inputs.local_adapter_ids,
                           adapter_params=adapter_params,
-                          kv_start_indices=kv_start_indices)
+                          kwargs=kwargs)
         return ret
 
     @classmethod
@@ -368,6 +357,29 @@ class StepContext:
             ]
             position_ids_1d = torch.cat(position_ids_1d).to(device)
         return position_ids_1d
+
+    @classmethod
+    def new_kwargs(
+        cls,
+        inputs: ModelInputs,
+        device: str = 'cuda',
+        cache_config: CacheConfig = None,
+        q_start_loc: Tensor = None,
+    ):
+        kwargs = {}
+        kv_start_indices = []
+        for i in range(q_start_loc.size(0)):
+            history_length = inputs.history_lengths[i]
+            block_idx = history_length // cache_config.block_size
+            block_loc = inputs.block_offsets[i][block_idx]
+            token_loc = history_length % cache_config.block_size
+            for _ in range(inputs.seq_length[i]):
+                kv_start_indices.append(block_loc * cache_config.block_size + token_loc)
+                token_loc = (token_loc + 1) % cache_config.block_size
+                block_idx = block_idx if token_loc else block_idx + 1
+                block_loc = inputs.block_offsets[i][block_idx]
+        kwargs["kv_start_indices"] = torch.tensor(kv_start_indices, device=device)           
+        return kwargs
 
     def set_output(self, key, value):
         """set output."""
@@ -896,7 +908,6 @@ def _start_tp_process(proc_id: int,
         args (List): The arguments of the func.
         kwargs (Dict): The keyword arguments of the func.
     """
-    import torch_dipu
     rank = proc_id + 1
     try:
         dist.init_process_group('nccl',
@@ -904,7 +915,7 @@ def _start_tp_process(proc_id: int,
                                 world_size=world_size,
                                 timeout=timedelta(days=35600))
         torch.cuda.set_device(rank)
-        with torch.cuda.device(rank), torch.inference_mode():
+        with torch.inference_mode():
             args = args or tuple()
             kwargs = kwargs or dict()
             func(rank, *args, **kwargs)

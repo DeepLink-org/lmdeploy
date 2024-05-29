@@ -1,11 +1,8 @@
 import torch
 from torch import Tensor
 import deeplink_ext.cpp_extensions as ext
-from torch.autograd.profiler import record_function
 
 
-@record_function("mark_fused_rotary_emb")
-@torch.no_grad()
 def fused_rotary_emb(q: Tensor,
                      k: Tensor,
                      position_ids: torch.LongTensor,

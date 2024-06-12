@@ -60,7 +60,7 @@ def _update_cache_config(model_config: ModelConfig,
     def __get_free_gpu_mem_size(cache_block_size: int):
         """get free gpu memory size."""
         torch.cuda.empty_cache()
-        gpu_mem_physical_free = host_mem_size
+        gpu_mem_physical_free = host_mem_size * 10
         logger.debug(f'device<{gpu_id}> free gpu memory:'
                      f' {gpu_mem_physical_free>>20} mb')
         vocal_size = model_config.vocab_size
@@ -375,10 +375,12 @@ class StepContext:
             token_loc = history_length % cache_config.block_size
             for _ in range(inputs.seq_length[i]):
                 kv_start_indices.append(block_loc * cache_config.block_size + token_loc)
+                if _ == inputs.seq_length[i] - 1:
+                    break
                 token_loc = (token_loc + 1) % cache_config.block_size
                 block_idx = block_idx if token_loc else block_idx + 1
                 block_loc = inputs.block_offsets[i][block_idx]
-        kwargs["kv_start_indices"] = torch.tensor(kv_start_indices, device=device)           
+        kwargs["kv_start_indices"] = torch.tensor(kv_start_indices, device=device)
         return kwargs
 
     def set_output(self, key, value):

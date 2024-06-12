@@ -9,54 +9,62 @@ from torch import Tensor
 mask_cache = {}
 
 
-def flash_context_attention(q, k, v, out, b_start_loc, b_seq_len, max_input_len):
-    batch, head, dim = b_start_loc.shape[0], q.shape[1], q.shape[2]
-    numKeyValueHeads = k.shape[1]
-    assert k.shape[1] == v.shape[1]
+def flash_context_attention(
+    query_states: Tensor,
+    key_states: Tensor,
+    value_states: Tensor,
+    attn_output: Tensor,
+    key_cache: Tensor,
+    value_cache: Tensor,
+    block_offsets: Tensor,
+    q_start_loc: Tensor,
+    q_seqlens: Tensor,
+    kv_seqlens: Tensor,
+    block_size: int,
+    kv_cache_len: int,
+):
+    batch, head, dim = q_start_loc.shape[0], query_states.shape[1], query_states.shape[2]
+    numKeyValueHeads = value_states.shape[1]
+    assert key_states.shape[1] == value_states.shape[1]
     scale = 1 / math.sqrt(dim)
     for i in range(batch):
-        start = b_start_loc[i]
-        end = start + b_seq_len[i]
-
-        single_seq_len = int(b_seq_len[i])
-        single_q = q[start:end].view(1, single_seq_len, -1)
-        single_k = k[start:end].view(1, single_seq_len, -1)
-        single_v = v[start:end].view(1, single_seq_len, -1)
-
-        single_out = out[start:end, :].view(1, single_seq_len, -1)
-        if single_seq_len not in mask_cache:
-            mask = torch.tril(torch.ones(single_seq_len, single_seq_len, dtype=torch.bool), diagonal=0).cuda()
-            mask = mask.repeat(1, 1, 1)
-            mask = torch.logical_not(mask)
-            mask_cache[single_seq_len] = mask
-            print(f"cache mask in context attention, seqLen:{single_seq_len}")
-        mask = mask_cache[single_seq_len]
-        ext.prompt_flash_attention(single_out, single_q, single_k, single_v, None, mask, [], head, scale, 2147473647, 0, "BSH", numKeyValueHeads)
-    return out
-
-
-def fused_context_attention(q, k, v, out, b_start_loc, b_seq_len, max_input_len):
-    batch, head, dim = b_start_loc.shape[0], q.shape[1], q.shape[2]
-    numKeyValueHeads = k.shape[1]
-    assert k.shape[1] == v.shape[1]
-    scale = 1.0 / math.sqrt(dim)
-
-    mask_key_str = str(batch) + ":" + str(max_input_len)
-    if mask_key_str not in mask_cache:
-        mask = torch.tril(torch.ones(max_input_len, max_input_len, dtype=torch.bool), diagonal=0).cuda()
-        mask = mask.repeat(batch, 1, 1)
-        mask = torch.logical_not(mask)
-        mask_cache[mask_key_str] = mask
-        print(f"cache mask in context attention, batch:seqLen={mask_key_str}")
-    
-    mask = mask_cache[mask_key_str]
-    ext.prompt_flash_attention(
-        out.view(batch, max_input_len, head*dim), 
-        q.view(batch, max_input_len, head*dim), 
-        k.view(batch, max_input_len, numKeyValueHeads*dim), 
-        v.view(batch, max_input_len, numKeyValueHeads*dim), 
-        None, mask, b_seq_len, head, scale, 2147473647, 0, "BSH", numKeyValueHeads)
-    return out
+        start = q_start_loc[i]
+        end = start + q_seqlens[i]
+        single_seqlen = int(end - start)
+        single_q = query_states[start:end].view(1, single_seqlen, -1)
+        single_k = key_states[start:end].view(1, single_seqlen, -1)
+        single_v = value_states[start:end].view(1, single_seqlen, -1)
+        single_out = attn_output[start:end, :].view(1, single_seqlen, -1)
+        if q_seqlens[i] == kv_seqlens[i]:
+            if single_seqlen not in mask_cache:
+                mask = torch.tril(torch.ones(single_seqlen, single_seqlen, dtype=torch.bool), diagonal=0).cuda()
+                mask = mask.repeat(1, 1, 1)
+                mask = torch.logical_not(mask)
+                mask_cache[single_seqlen] = mask
+                print(f"cache mask in context attention, seqLen:{single_seqlen}")
+            mask = mask_cache[single_seqlen]
+            ext.prompt_flash_attention(single_out, single_q, single_k, single_v,
+                                       None, mask,
+                                       [], head, scale, 2147473647, 0, "BSH", numKeyValueHeads)
+        else:
+            key_cache = key_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)
+            value_cache = value_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)
+            for j in range(q_seqlens[i]):
+                single_q = query_states[start+j:start+j+1].view(1, 1, -1)
+                single_out = attn_output[start+j:start+j+1].view(1, 1, -1)
+                if f"{q_seqlens[i]}_{kv_seqlens[i]}" not in mask_cache:
+                    mask = torch.tril(torch.ones(q_seqlens[i], kv_seqlens[i], dtype=torch.bool), diagonal=kv_seqlens[i] - q_seqlens[i]).cuda()
+                    mask = torch.logical_not(mask)
+                    mask_cache[f"{q_seqlens[i]}_{kv_seqlens[i]}"] = mask
+                    print(f"cache mask in context attention, seqLen:{q_seqlens[i]}_{kv_seqlens[i]}")
+                mask = mask_cache[f"{q_seqlens[i]}_{kv_seqlens[i]}"]
+                ext.paged_attention(single_out, single_q, key_cache, value_cache,
+                                    None, mask[j:j+1].clone(),
+                                    [kv_seqlens[i]], block_offsets[i:i+1].clone(), head, numKeyValueHeads,
+                                    scale, "BSH", block_size, 0, 
+                                    None, None, None, None, None, None, None, None
+                                    )
+    return attn_output
 
 
 def paged_token_attention(q, k_cache, v_cache, out, b_seq_len, block_table:torch.Tensor, block_size):
@@ -106,12 +114,14 @@ def paged_attention_fwd(
         BLOCK (int): The kernel block size.
     """
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
+    block_num, block_size, head, dim = key_cache.size()
+    kv_cache_len = block_num * block_size
+    k = key_cache.reshape(block_num * block_size, head, dim)
+    v = value_cache.reshape(block_num * block_size, head, dim)
     if not is_decoding:
-        return flash_context_attention(query_states, key_states, value_states, attn_output,
-                                       q_start_loc, q_seqlens.tolist(), max_seqlen)
+        return flash_context_attention(query_states, key_states, value_states, attn_output, k,
+                                       v, block_offsets.to(torch.int32), q_start_loc, q_seqlens,
+                                       kv_seqlens, block_size, kv_cache_len)
     else:
-        block_num, block_size, head, dim = key_cache.size()
-        k = key_cache.reshape(block_num * block_size, head, dim)
-        v = value_cache.reshape(block_num * block_size, head, dim)
         return paged_token_attention(query_states, k, v, attn_output, kv_seqlens.tolist(),
                                      block_offsets.to(torch.int32), block_size)

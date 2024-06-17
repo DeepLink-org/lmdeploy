@@ -281,7 +281,6 @@ class FusedLogitsProcessor(LogitsWarper):
             return _multinomial_sampling(softmax_scores, seeds, offsets,
                                          indices)
 
-        return logits.argmax(-1)
         if sampling_inputs.max_top_k == 1:
             return logits.argmax(-1)
         else:

@@ -60,7 +60,7 @@ def _update_cache_config(model_config: ModelConfig,
     def __get_free_gpu_mem_size(cache_block_size: int):
         """get free gpu memory size."""
         torch.cuda.empty_cache()
-        gpu_mem_physical_free = host_mem_size * 10
+        gpu_mem_physical_free, _ = get_gpu_memory(gpu_id)
         logger.debug(f'device<{gpu_id}> free gpu memory:'
                      f' {gpu_mem_physical_free>>20} mb')
         vocal_size = model_config.vocab_size

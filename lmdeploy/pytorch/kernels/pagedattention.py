@@ -18,15 +18,14 @@ def flash_context_attention(
     value_cache: Tensor,
     block_offsets: Tensor,
     q_start_loc: Tensor,
-    q_seqlens: Tensor,
-    kv_seqlens: Tensor,
+    q_seqlens: list,
+    kv_seqlens: list,
     block_size: int,
     kv_cache_len: int,
 ):
     batch, head, dim = q_start_loc.shape[0], query_states.shape[1], query_states.shape[2]
     numKeyValueHeads = value_states.shape[1]
     assert key_states.shape[1] == value_states.shape[1]
-    scale = 1 / math.sqrt(dim)
     for i in range(batch):
         start = q_start_loc[i]
         end = start + q_seqlens[i]
@@ -44,8 +43,7 @@ def flash_context_attention(
                 print(f"cache mask in context attention, seqLen:{single_seqlen}")
             mask = mask_cache[single_seqlen]
             ext.prompt_flash_attention(single_out, single_q, single_k, single_v,
-                                       None, mask,
-                                       [], head, scale, 2147473647, 0, "BSH", numKeyValueHeads)
+                                       mask, kv_seqlens, max(kv_seqlens), head, numKeyValueHeads, dim)
         else:
             key_cache = key_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)
             value_cache = value_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)
@@ -58,29 +56,25 @@ def flash_context_attention(
                     mask_cache[f"{q_seqlens[i]}_{kv_seqlens[i]}"] = mask
                     print(f"cache mask in context attention, seqLen:{q_seqlens[i]}_{kv_seqlens[i]}")
                 mask = mask_cache[f"{q_seqlens[i]}_{kv_seqlens[i]}"]
-                ext.paged_attention(single_out, single_q, key_cache, value_cache,
-                                    None, mask[j:j+1].clone(),
-                                    [kv_seqlens[i]], block_offsets[i:i+1].clone(), head, numKeyValueHeads,
-                                    scale, "BSH", block_size, 0, 
-                                    None, None, None, None, None, None, None, None
+                ext.paged_attention(single_out, single_q, key_cache, value_cache, mask[j:j+1].clone()
+                                    [kv_seqlens[i]],  head, numKeyValueHeads,
+                                    dim, block_offsets[i:i+1].clone(), block_size
                                     )
     return attn_output
 
 
-def paged_token_attention(q, k_cache, v_cache, out, b_seq_len, block_table:torch.Tensor, block_size):
+def paged_token_attention(q, k_cache, v_cache, out, kv_seqlens, block_table:torch.Tensor, block_size):
     numKeyValueHeads = k_cache.shape[1]
     assert k_cache.shape[1] == v_cache.shape[1]
     batch, head, dim = q.shape
     kv_cache_len = k_cache.shape[0]
-    q = q.reshape(batch, head*dim).unsqueeze(1)
+    q = q.reshape(batch, 1, head*dim)
     k_cache = k_cache.reshape(kv_cache_len, numKeyValueHeads*dim).unsqueeze(0)
     v_cache = v_cache.reshape(kv_cache_len, numKeyValueHeads*dim).unsqueeze(0)
     out = out.view(q.shape)
-    ext.paged_attention(out, q, k_cache, v_cache,
-                        None, None, 
-                        b_seq_len, block_table, head, numKeyValueHeads,
-                        1.0 / math.sqrt(dim), "BSH", block_size, 0, 
-                        None, None, None, None, None, None, None, None
+    ext.paged_attention(out, q, k_cache, v_cache, None,
+                        kv_seqlens, head, numKeyValueHeads,
+                        dim, block_table, block_size
                         )
     return out
 
@@ -120,8 +114,8 @@ def paged_attention_fwd(
     v = value_cache.reshape(block_num * block_size, head, dim)
     if not is_decoding:
         return flash_context_attention(query_states, key_states, value_states, attn_output, k,
-                                       v, block_offsets.to(torch.int32), q_start_loc, q_seqlens,
-                                       kv_seqlens, block_size, kv_cache_len)
+                                       v, block_offsets.to(torch.int32), q_start_loc, q_seqlens.tolist(),
+                                       kv_seqlens.tolist(), block_size, kv_cache_len)
     else:
         return paged_token_attention(query_states, k, v, attn_output, kv_seqlens.tolist(),
                                      block_offsets.to(torch.int32), block_size)

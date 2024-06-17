@@ -10,9 +10,12 @@ def fused_rotary_emb(q: Tensor,
                      scaling_factor: float,
                      out_q: Tensor = None,
                      out_k: Tensor = None):
+    seq_len, head, dim = q.shape
+    q = q.view(seq_len, head*dim)
+    k = k.view(seq_len, head*dim)
     position_ids = position_ids.unsqueeze(-1)
     pos_freq = position_ids / scaling_factor * inv_freq
-    cos = torch.cos(pos_freq).view(1, position_ids.shape[0], 1, -1).repeat(1,1,1,2).to(q.dtype)
-    sin = torch.sin(pos_freq).view(1, position_ids.shape[0], 1, -1).repeat(1,1,1,2).to(q.dtype)
-    ext.rotary_embedding_v2(q, k, cos, sin)
-    return q, k
+    cos = torch.cos(pos_freq).view(position_ids.shape[0], 1, -1).repeat(1,1,2).to(q.dtype)
+    sin = torch.sin(pos_freq).view(position_ids.shape[0], 1, -1).repeat(1,1,2).to(q.dtype)
+    ext.rotary_embedding_v2(q, k, cos, sin, dim)
+    return q.view(seq_len, head, dim), k.view(seq_len, head, dim)

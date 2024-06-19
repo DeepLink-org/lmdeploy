@@ -31,8 +31,8 @@ def flash_context_attention(
         end = start + q_seqlens[i]
         single_seqlen = int(end - start)
         single_q = query_states[start:end].view(1, single_seqlen, -1)
-        single_k = key_states[start:end].view(1, single_seqlen, -1)
-        single_v = value_states[start:end].view(1, single_seqlen, -1)
+        single_k = key_states[start:end].reshape(1, single_seqlen, -1)
+        single_v = value_states[start:end].reshape(1, single_seqlen, -1)
         single_out = attn_output[start:end, :].view(1, single_seqlen, -1)
         if q_seqlens[i] == kv_seqlens[i]:
             if single_seqlen not in mask_cache:
@@ -43,7 +43,7 @@ def flash_context_attention(
                 print(f"cache mask in context attention, seqLen:{single_seqlen}")
             mask = mask_cache[single_seqlen]
             ext.prompt_flash_attention(single_out, single_q, single_k, single_v,
-                                       mask, kv_seqlens, max(kv_seqlens), head, numKeyValueHeads, dim)
+                                       mask, [kv_seqlens[i]], kv_seqlens[i], head, numKeyValueHeads, dim)
         else:
             key_cache = key_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)
             value_cache = value_cache.reshape(1, kv_cache_len, numKeyValueHeads*dim)

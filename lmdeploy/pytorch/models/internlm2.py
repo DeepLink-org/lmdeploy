@@ -113,13 +113,13 @@ class PatchedInternLM2Attention(nn.Module):
         )
 
         attn_output = query_states
-        attn_output = paged_attention_fwd(
+        paged_attention_fwd(
             query_states,
             key_states,
             value_states,
-            attn_output,
             past_key_value[0],
             past_key_value[1],
+            attn_output,
             block_offsets,
             q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,

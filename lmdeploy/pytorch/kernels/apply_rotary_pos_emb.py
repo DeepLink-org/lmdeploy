@@ -4,6 +4,7 @@ import triton
 import triton.language as tl
 from torch import Tensor
 from triton.runtime.jit import get_cuda_stream
+import deeplink_ext.cpp_extensions as ext
 
 
 @triton.jit

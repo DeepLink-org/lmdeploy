@@ -133,23 +133,15 @@ class LlamaAttention(nn.Module):
         def __rotary_emb_fn_438_fused(query_states, key_states, value_states):
             scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
             inv_freq = self.rotary_emb.inv_freq
-            # query_states, key_states = fused_rotary_emb(
-            #     query_states[None],
-            #     key_states[None],
-            #     context.position_ids_1d[None],
-            #     inv_freq=inv_freq,
-            #     scaling_factor=scaling_factor,
-            #     out_q=query_states[None],
-            #     out_k=key_states[None])
             query_states, key_states = fused_rotary_emb(
-                query_states,
-                key_states,
-                context.position_ids_1d,
+                query_states[None],
+                key_states[None],
+                context.position_ids_1d[None],
                 inv_freq=inv_freq,
                 scaling_factor=scaling_factor,
-                out_q=query_states,
-                out_k=key_states)
-            return query_states, key_states, value_states
+                out_q=query_states[None],
+                out_k=key_states[None])
+            return query_states[0], key_states[0], value_states
 
         def __rotary_emb_fn_438(query_states, key_states, value_states):
             rotary_name = type(self.rotary_emb).__name__
@@ -194,13 +186,13 @@ class LlamaAttention(nn.Module):
         )
 
         attn_output = query_states
-        attn_output = paged_attention_fwd(
+        paged_attention_fwd(
             query_states,
             key_states,
             value_states,
-            attn_output,
             past_key_value[0],
             past_key_value[1],
+            attn_output,
             block_offsets,
             q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,

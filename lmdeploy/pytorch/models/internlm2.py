@@ -109,11 +109,14 @@ class PatchedInternLM2Attention(nn.Module):
             kv_seq_length=kv_seq_length,
             max_q_seq_length=max_q_seq_length,
             block_offsets=block_offsets,
+            **context.kwargs,
         )
 
         attn_output = query_states
         paged_attention_fwd(
             query_states,
+            key_states,
+            value_states,
             past_key_value[0],
             past_key_value[1],
             attn_output,

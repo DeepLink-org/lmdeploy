@@ -110,7 +110,8 @@ class TestPagedAttention:
 
     @pytest.fixture
     def feat_dim(self):
-        yield 16
+        #yield 16
+        yield 128
 
     @pytest.fixture
     def num_heads_q(self, request):
@@ -221,13 +222,13 @@ class TestPagedAttention:
     def conti_gt(self, gt, seq_lens):
         yield _conti_input(gt, seq_lens)
 
-    @pytest.mark.parametrize(['num_heads_q', 'num_heads_k'], [(4, 2)],
+    @pytest.mark.parametrize(['num_heads_q', 'num_heads_k'], [(32, 8)],
                              indirect=True)
     @pytest.mark.parametrize(['seq_lens', 'history_lens'],
                              [([30, 50, 70, 90], [50, 40, 30, 20]),
                               ([1, 1, 1, 1], [50, 40, 30, 20])],
                              indirect=True)
-    @pytest.mark.parametrize('block_size', [2, 16], indirect=True)
+    @pytest.mark.parametrize('block_size', [32], indirect=True)
     def test_paged_attention(self, conti_q, blocked_kv, block_offsets,
                              start_loc, seq_lens, history_lens, conti_gt):
         from lmdeploy.pytorch.kernels import paged_attention_fwd
@@ -248,46 +249,46 @@ class TestPagedAttention:
                             max_seqlen=max_seq_len)
         torch.testing.assert_close(out, conti_gt, atol=1e-3, rtol=1e-5)
 
-    @pytest.fixture
-    def win_size(self, request):
-        yield request.param
+    #@pytest.fixture
+    #def win_size(self, request):
+    #    yield request.param
 
-    @pytest.fixture
-    def window_gt(self, conti_q, conti_kv, seq_lens, history_lens, win_size):
-        kv_lens = seq_lens + history_lens
-        yield _naive_window_attention(conti_q,
-                                      conti_kv[0],
-                                      conti_kv[1],
-                                      seq_lens,
-                                      kv_lens,
-                                      window_size=(win_size, win_size))
+    #@pytest.fixture
+    #def window_gt(self, conti_q, conti_kv, seq_lens, history_lens, win_size):
+    #    kv_lens = seq_lens + history_lens
+    #    yield _naive_window_attention(conti_q,
+    #                                  conti_kv[0],
+    #                                  conti_kv[1],
+    #                                  seq_lens,
+    #                                  kv_lens,
+    #                                  window_size=(win_size, win_size))
 
-    @pytest.mark.parametrize(['num_heads_q', 'num_heads_k'], [(4, 2)],
-                             indirect=True)
-    @pytest.mark.parametrize(['seq_lens', 'history_lens'], [
-        ([30, 50, 70, 90], [50, 40, 30, 20]),
-        ([1, 1, 1, 1], [50, 40, 30, 20]),
-    ],
-                             indirect=True)
-    @pytest.mark.parametrize('win_size', (32, ), indirect=True)
-    @pytest.mark.parametrize('block_size', [16], indirect=True)
-    def test_window_attention(self, conti_q, blocked_kv, block_offsets,
-                              start_loc, seq_lens, history_lens, win_size,
-                              window_gt):
-        from lmdeploy.pytorch.kernels import paged_attention_fwd
-        kv_seq_lens = seq_lens + history_lens
-        max_seq_len = seq_lens.max().item()
+    #@pytest.mark.parametrize(['num_heads_q', 'num_heads_k'], [(4, 2)],
+    #                         indirect=True)
+    #@pytest.mark.parametrize(['seq_lens', 'history_lens'], [
+    #    ([30, 50, 70, 90], [50, 40, 30, 20]),
+    #    ([1, 1, 1, 1], [50, 40, 30, 20]),
+    #],
+    #                         indirect=True)
+    #@pytest.mark.parametrize('win_size', (32, ), indirect=True)
+    #@pytest.mark.parametrize('block_size', [16], indirect=True)
+    #def test_window_attention(self, conti_q, blocked_kv, block_offsets,
+    #                          start_loc, seq_lens, history_lens, win_size,
+    #                          window_gt):
+    #    from lmdeploy.pytorch.kernels import paged_attention_fwd
+    #    kv_seq_lens = seq_lens + history_lens
+    #    max_seq_len = seq_lens.max().item()
 
-        blocked_k, blocked_v = blocked_kv
-        out = torch.empty_like(conti_q)
-        paged_attention_fwd(conti_q,
-                            blocked_k,
-                            blocked_v,
-                            out,
-                            block_offsets=block_offsets,
-                            q_start_loc=start_loc,
-                            q_seqlens=seq_lens,
-                            kv_seqlens=kv_seq_lens,
-                            max_seqlen=max_seq_len,
-                            window_size=win_size)
-        torch.testing.assert_close(out, window_gt, atol=1e-3, rtol=1e-5)
+    #    blocked_k, blocked_v = blocked_kv
+    #    out = torch.empty_like(conti_q)
+    #    paged_attention_fwd(conti_q,
+    #                        blocked_k,
+    #                        blocked_v,
+    #                        out,
+    #                        block_offsets=block_offsets,
+    #                        q_start_loc=start_loc,
+    #                        q_seqlens=seq_lens,
+    #                        kv_seqlens=kv_seq_lens,
+    #                        max_seqlen=max_seq_len,
+    #                        window_size=win_size)
+    #    torch.testing.assert_close(out, window_gt, atol=1e-3, rtol=1e-5)

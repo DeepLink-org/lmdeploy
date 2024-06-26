@@ -2,8 +2,11 @@
 # modify from: https://github.com/ModelTC/lightllm
 import torch
 import math
-import deeplink_ext.cpp_extensions as ext
+#import deeplink_ext.cpp_extensions as ext
 from torch import Tensor
+from flash_attn import flash_attn_varlen_func
+
+import vllm._C as vllm_ops
 
 
 mask_cache = {}
@@ -74,11 +77,52 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seqlens, block_ta
                         dim, block_table, block_size
                         )
 
+def _make_bias(seq_lens, history_lens, neg_val=-1e30):
+    full_seq_lens = seq_lens + history_lens
+    max_seq_len = seq_lens.max().item()
+    max_full_len = full_seq_lens.max().item()
+    seq_ranges = [torch.arange(max_seq_len) for _ in seq_lens]
+    for r, l in zip(seq_ranges, seq_lens):
+        r[l:] = -max_full_len
+    seq_ranges = torch.stack(seq_ranges, dim=0).cuda()
+    kv_ranges = [torch.arange(max_full_len) for _ in full_seq_lens]
+    kv_ranges = torch.stack(kv_ranges, 0).cuda()
+    mask = kv_ranges[:, None, :] - seq_ranges[:, :, None] > history_lens[:,
+                                                                         None,
+                                                                         None]
+    return mask.float() * neg_val
+
+def _naive_attention(batched_q, batched_k, batched_v, bias):
+    #batched_k, batched_v = batched_kv
+
+    num_heads_q = batched_q.shape[2]
+    num_heads_k = batched_k.shape[2]
+    head_dim = batched_q.shape[-1]
+    group = num_heads_q // num_heads_k
+
+
+    q = batched_q.transpose(1, 2)
+    k = batched_k.permute(0, 2, 3, 1)
+    v = batched_v.transpose(1, 2)
+
+    # expand group
+    k = k.unsqueeze(2).expand(-1, -1, group, -1, -1).flatten(1, 2)
+    v = v.unsqueeze(2).expand(-1, -1, group, -1, -1).flatten(1, 2)
+
+    qk = torch.matmul(q, k) / math.sqrt(head_dim)
+    attn_weight = qk + bias[:, None]
+    attn_weight = torch.softmax(attn_weight, dim=-1, dtype=torch.float32)
+    attn_weight = attn_weight.to(q.dtype)
+    attn_output = torch.matmul(attn_weight, v)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+
+    return attn_output.squeeze(1)
+
+
 
 def paged_attention_fwd(
     query_states: Tensor,
-    key_states: Tensor,
-    value_states: Tensor,
     key_cache: Tensor,
     value_cache: Tensor,
     attn_output: Tensor,
@@ -88,6 +132,8 @@ def paged_attention_fwd(
     kv_seqlens: Tensor,
     max_seqlen: int,
     window_size: int = None,
+    key_states: Tensor = None,
+    value_states: Tensor = None,
 ):
     """Paged Attention forward.
 
@@ -104,14 +150,68 @@ def paged_attention_fwd(
         BLOCK (int): The kernel block size.
     """
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
-    block_num, block_size, head, dim = key_cache.size()
-    kv_cache_len = block_num * block_size
-    k = key_cache.reshape(block_num * block_size, head, dim)
-    v = value_cache.reshape(block_num * block_size, head, dim)
     if not is_decoding:
-        flash_context_attention(query_states, key_states, value_states, attn_output, k,
-                                v, block_offsets.to(torch.int32), q_start_loc, q_seqlens.tolist(),
-                                kv_seqlens.tolist(), block_size, kv_cache_len)
+        block_num, block_size, head, dim = key_cache.size()
+        if key_states is None or value_states is None:
+            block_num, block_size, head, dim = key_cache.size()
+            batch_size = q_seqlens.size(0)
+            batch_k = []
+            batch_v = []
+            for i in range(batch_size):
+                offsets = block_offsets[i]
+                tmp_k = key_cache[offsets].view(-1, head, dim)
+                tmp_k = tmp_k[:kv_seqlens[i]]
+                batch_k.append(tmp_k)
+      
+                tmp_v = value_cache[offsets].view(-1, head, dim)   
+                tmp_v = tmp_v[:kv_seqlens[i]]
+                batch_v.append(tmp_v)
+            key_states = torch.cat(batch_k, 0)
+            value_states = torch.cat(batch_v, 0)
+        def _make_cu_seqlens(seqlens):
+            cu_seqlens = seqlens.cumsum(0)
+            cu_zero = cu_seqlens.new_zeros(1)
+            cu_seqlens = torch.cat([cu_zero, cu_seqlens])
+            return cu_seqlens
+        max_seqlen_q = q_seqlens.max().item()
+        max_seqlen_k = kv_seqlens.max().item()
+        cu_seqlens_q = _make_cu_seqlens(q_seqlens).int()
+        cu_seqlens_k = _make_cu_seqlens(kv_seqlens).int()
+        if window_size:
+            win_size = (window_size, window_size)
+        else:
+            win_size = (-1, -1)
+        attn_output.copy_(flash_attn_varlen_func(
+            q=query_states,
+            k=key_states,
+            v=value_states,
+            cu_seqlens_q=cu_seqlens_q,
+            cu_seqlens_k=cu_seqlens_k,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_k=max_seqlen_k,
+            softmax_scale=float(1 / math.sqrt(dim)),
+            causal=True,
+            window_size=win_size,
+        ))
     else:
-        paged_token_attention(query_states, k, v, attn_output, kv_seqlens.tolist(),
-                              block_offsets.to(torch.int32), block_size)
+        block_num, block_size, head, dim = key_cache.size()
+        max_context_len = kv_seqlens.max().item()
+        kv_cache_len = block_num * block_size
+        x = 32 // key_cache.element_size()
+        vllm_key_cache = key_cache.view(block_num, block_size, head, dim // x, x).permute(0, 2, 3, 1, 4).contiguous()  # block_num head block_size dim
+        vllm_value_cache = value_cache.transpose(2, 1).contiguous()
+
+        vllm_ops.ops.paged_attention_v1(
+            attn_output,
+            query_states,
+            vllm_key_cache,
+            vllm_value_cache,
+            head,
+            float(1 / math.sqrt(dim)), # scale
+            block_offsets.to(torch.int32),
+            kv_seqlens.to(torch.int32),
+            block_size,
+            max_context_len, #max_seqlen,
+            None,
+            'auto',
+        )

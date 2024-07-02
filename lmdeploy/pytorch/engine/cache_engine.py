@@ -88,11 +88,15 @@ class CacheEngine:
             assert self.num_heads % self.world_size == 0, \
                 f'num_heads: {self.num_heads}, world_size: {self.world_size}'
             num_heads = self.num_heads // self.world_size
-        return (
-            self.block_size,
-            num_heads,
-            self.head_size,
-        )
+        #return (self.block_size * num_heads * self.head_size,)
+        #return (
+        #    self.block_size,
+        #    num_heads,
+        #    self.head_size,
+        #)
+        x = 16
+        return (num_heads, self.head_size // x, self.block_size, x)
+        #return (self.block_size * num_heads * self.head_size,)
 
     def get_value_block_shape(self,
                               local: bool = False) -> Tuple[int, int, int]:
@@ -102,9 +106,15 @@ class CacheEngine:
             assert self.num_heads % self.world_size == 0, \
                 f'num_heads: {self.num_heads}, world_size: {self.world_size}'
             num_heads = self.num_heads // self.world_size
+        #return (self.block_size * num_heads * self.head_size,)
+        #return (
+        #    self.block_size,
+        #    num_heads,
+        #    self.head_size,
+        #)
         return (
-            self.block_size,
             num_heads,
+            self.block_size,
             self.head_size,
         )
 

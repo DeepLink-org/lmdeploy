@@ -1,8 +1,8 @@
 import torch
-import deeplink_ext.cpp_extensions as ext
 from torch import Tensor
 from typing import Dict
 
+import vllm._C as vllm_ops
 
 def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
                   v_caches: Tensor, q_start_loc: Tensor, q_seq_length: Tensor,
@@ -10,12 +10,28 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
                   block_offsets: Tensor, **kwargs: Dict):
     """fill key/value state to cache for paged attention."""
     assert "kv_start_indices" in kwargs.keys()
-    dest_index_copy_kv(k_states, kwargs["kv_start_indices"], k_caches)
-    dest_index_copy_kv(v_states, kwargs["kv_start_indices"], v_caches)
+
+    block_num, head, block_size, dim = v_caches.size()
+    x = 32 // k_caches.element_size()
+    
+    vllm_ops.cache_ops.reshape_and_cache_new(
+        k_states,
+        v_states, 
+        k_caches,
+        v_caches,
+        kwargs["kv_start_indices"],
+        'auto',
+    )
+    lm_v_caches = v_caches.transpose(2, 1).contiguous()
+    dest_index_copy_kv(v_states, kwargs["kv_start_indices"], lm_v_caches)
+    lm_v_caches = lm_v_caches.transpose(2, 1).contiguous()
+    v_caches[:] = lm_v_caches
+    return
 
 
 def dest_index_copy_kv(states, dest_loc, caches):
     block_num, block_size, head, dim = caches.size()
     caches_tmp = caches.view(block_num * block_size, head, dim)
-    ext.dest_index_copy_kv(states, dest_loc, caches_tmp)
+    caches_tmp[dest_loc] = states
     caches[:] = caches_tmp.view(block_num, block_size, head, dim)
+

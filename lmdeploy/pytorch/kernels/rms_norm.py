@@ -1,13 +1,24 @@
 import torch
 from torch import Tensor
-import deeplink_ext.cpp_extensions as ext
+import vllm._C as vllm_ops
+#import deeplink_ext.cpp_extensions as ext
+
+#def torch_forward(hidden_states, weight, eps=1e-6):
+#    """pytorch forward."""
+#    input_dtype = hidden_states.dtype
+#    hidden_states = hidden_states.to(torch.float32)
+#    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+#    hidden_states = hidden_states * torch.rsqrt(variance +
+#                                                eps)
+#    return weight * hidden_states.to(input_dtype)
+#
+#rms_norm = torch_forward
+
 
 
 def rms_norm(hidden_states: Tensor, weight: Tensor, eps: float = 1e-6):
     output = torch.empty_like(hidden_states)
-    inv_rms_shape = list(hidden_states.shape[:-1]) + [1]
-    inv_rms = torch.empty(inv_rms_shape, dtype=torch.float32, device=hidden_states.device)
-    ext.rms_norm(output, inv_rms, hidden_states, weight.shape, weight, None, eps)
+    vllm_ops.ops.rms_norm(output, hidden_states, weight, eps)
     return output
 
 

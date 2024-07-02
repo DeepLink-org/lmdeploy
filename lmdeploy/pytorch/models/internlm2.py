@@ -98,7 +98,6 @@ class PatchedInternLM2Attention(nn.Module):
 
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
-
         fill_kv_cache(
             key_states,
             value_states,
@@ -115,8 +114,8 @@ class PatchedInternLM2Attention(nn.Module):
         attn_output = query_states
         paged_attention_fwd(
             query_states,
-            key_states,
-            value_states,
+            #key_states,
+            #value_states,
             past_key_value[0],
             past_key_value[1],
             attn_output,
@@ -125,6 +124,8 @@ class PatchedInternLM2Attention(nn.Module):
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
             max_seqlen=max_q_seq_length,
+            key_states=key_states,
+            value_states=value_states,
         )
         attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
 

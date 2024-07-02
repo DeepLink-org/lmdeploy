@@ -324,4 +324,17 @@ MODULE_MAP.update({
 # ascend module
 ASCEND_MODULE_MAP = dict()
 
-DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP)
+
+
+# muxi module
+MUXI_MODULE_MAP = dict()
+
+# muxi internlm2
+MUXI_MODULE_MAP.update({
+    'modeling_internlm2.InternLM2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMuxi',
+    'modeling_internlm2.InternLM2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMuxi',
+})
+
+DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

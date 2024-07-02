@@ -19,7 +19,8 @@ def paged_attention_fwd(
     q_seqlens: Tensor,
     kv_seqlens: Tensor,
     max_seqlen: int,
-    window_size: int = None,
+    window_size: int,
+    context: None,
 ):
     """Paged Attention forward.
 
@@ -35,6 +36,7 @@ def paged_attention_fwd(
         max_seqlen (int): The max input length.
         BLOCK (int): The kernel block size.
     """
+
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
     if not is_decoding:
         block_num, head, block_size, dim = value_cache.size()

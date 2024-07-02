@@ -12,7 +12,7 @@ class MUXIDeviceUtils(BaseDeviceUtils):
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
-        _, block_size, _, _ = step_context.kv_caches[0][0].shape
+        _, _, block_size, _ = step_context.kv_caches[0][1].size()
         for i in range(step_context.q_start_loc.size(0)):
             single_attention_mask = torch.logical_not(
                 torch.tril(

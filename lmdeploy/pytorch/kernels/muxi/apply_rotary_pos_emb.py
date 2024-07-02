@@ -8,7 +8,8 @@ def _rotate_half(x):
     x2 = x[..., x.shape[-1] // 2:]
     return torch.cat((-x2, x1), dim=-1)
 
-def apply_rotary_pos_emb(q_states: Tensor, k_states: Tensor, cached_cos: Tensor, cached_sin: Tensor, position_ids: Tensor, position_ids_1d: Tensor, q_embed=None, k_embed=None):    cos = cached_cos[position_ids_1d, None, :]
+def apply_rotary_pos_emb(q_states: Tensor, k_states: Tensor, cached_cos: Tensor, cached_sin: Tensor, position_ids: Tensor, position_ids_1d: Tensor, q_embed=None, k_embed=None, context=None):
+    cos = cached_cos[position_ids_1d, None, :]
     sin = cached_sin[position_ids_1d, None, :]
 
     q_embed = q_states * cos + _rotate_half(q_states) * sin

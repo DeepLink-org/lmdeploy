@@ -1,18 +1,32 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from torch import Tensor
+from vllm._C import ops
 
-def _rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., :x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2:]
-    return torch.cat((-x2, x1), dim=-1)
+def apply_rotary_pos_emb(q_states: Tensor,
+                         k_states: Tensor,
+                         cached_cos: Tensor,
+                         cached_sin: Tensor,
+                         position_ids: Tensor,
+                         position_ids_1d: Tensor,
+                         q_embed=None,
+                         k_embed=None,
+                         context=None):
+    bs, head, dim = q_states.shape
+    kv_head = k_states.shape[1]
+    q_states = q_states.reshape(bs, head * dim)
+    k_states = k_states.reshape(bs, kv_head * dim)
 
-def apply_rotary_pos_emb(q_states: Tensor, k_states: Tensor, cached_cos: Tensor, cached_sin: Tensor, position_ids: Tensor, position_ids_1d: Tensor, q_embed=None, k_embed=None, context=None):
-    cos = cached_cos[position_ids_1d, None, :]
-    sin = cached_sin[position_ids_1d, None, :]
+    new_cos = cached_cos.squeeze(-2)
+    new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+    new_sin = cached_sin.squeeze(-2)
+    new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+    cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
 
-    q_embed = q_states * cos + _rotate_half(q_states) * sin
-    k_embed = k_states * cos + _rotate_half(k_states) * sin
-
-    return q_embed, k_embed
+    ops.rotary_embedding(position_ids_1d,
+                        q_states,
+                        k_states,
+                        dim,
+                        cos_sin_cache,
+                        True)
+    return q_states.view(bs, head, dim), k_states.view(bs, kv_head, dim)

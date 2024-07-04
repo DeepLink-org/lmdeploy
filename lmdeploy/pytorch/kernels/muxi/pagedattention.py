@@ -7,6 +7,12 @@ from flash_attn import flash_attn_varlen_func
 
 import vllm._C as vllm_ops
 
+def make_cu_seqlens(seqlens):
+    cu_seqlens = seqlens.cumsum(0)
+    cu_zero = cu_seqlens.new_zeros(1)
+    cu_seqlens = torch.cat([cu_zero, cu_seqlens])
+    return cu_seqlens
+
 def paged_attention_fwd(
     query_states: Tensor,
     key_states: Tensor,
@@ -41,15 +47,16 @@ def paged_attention_fwd(
     if not is_decoding:
         block_num, head, block_size, dim = value_cache.size()
         _, head, dim = key_states.size()
-        def _make_cu_seqlens(seqlens):
-            cu_seqlens = seqlens.cumsum(0)
-            cu_zero = cu_seqlens.new_zeros(1)
-            cu_seqlens = torch.cat([cu_zero, cu_seqlens])
-            return cu_seqlens
-        max_seqlen_q = q_seqlens.max().item()
-        max_seqlen_k = kv_seqlens.max().item()
-        cu_seqlens_q = _make_cu_seqlens(q_seqlens).int()
-        cu_seqlens_k = _make_cu_seqlens(kv_seqlens).int()
+        if context and hasattr(context, 'cu_seqlens_q'):
+            cu_seqlens_q = context.cu_seqlens_q
+            cu_seqlens_kv = context.cu_seqlens_kv
+            max_seqlen_q = context.max_q_seq_length
+            max_seqlen_kv = context.max_kv_seq_length
+        else:
+            cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
+            cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
+            max_seqlen_q = q_seqlens.max().item()
+            max_seqlen_kv = kv_seqlens.max().item()
         if window_size:
             win_size = (window_size, window_size)
         else:
@@ -59,35 +66,30 @@ def paged_attention_fwd(
             k=key_states,
             v=value_states,
             cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_k=cu_seqlens_k,
+            cu_seqlens_k=cu_seqlens_kv,
             max_seqlen_q=max_seqlen_q,
-            max_seqlen_k=max_seqlen_k,
+            max_seqlen_k=max_seqlen_kv,
             softmax_scale=float(1 / math.sqrt(dim)),
             causal=True,
             window_size=win_size,
         ))
     else:
-        x = 32 // key_cache.element_size()
+        if context and hasattr(context, 'max_kv_seq_length'):
+            max_seqlen_kv = context.max_kv_seq_length
+        else:
+            max_seqlen_kv = kv_seqlens.max().item()
         block_num, head, block_size, dim = value_cache.size()
-
-        vllm_key_cache = key_cache.view(block_num, head, dim // x, -1, x)
-        vllm_value_cache = value_cache.view(block_num, head, block_size, dim)
-
-        vllm_key_cache = key_cache
-        vllm_value_cache = value_cache
-
-        max_context_len = kv_seqlens.max().item()
         vllm_ops.ops.paged_attention_v1(
             attn_output,
             query_states,
-            vllm_key_cache,
-            vllm_value_cache,
+            key_cache,
+            value_cache,
             head,
             float(1 / math.sqrt(dim)), # scale
             block_offsets.to(torch.int32),
             kv_seqlens.to(torch.int32),
             block_size,
-            max_context_len, #max_seqlen,
+            max_seqlen_kv,
             None,
             'auto',
         )

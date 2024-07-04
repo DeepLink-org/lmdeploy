@@ -38,4 +38,16 @@ class MUXIDeviceUtils(BaseDeviceUtils):
             kv_start_indices, device=step_context.block_offsets.device)
         setattr(step_context, 'kv_start_indices', kv_start_indices)
         setattr(step_context, 'attention_mask', attention_mask)
+
+        def _make_cu_seqlens(seqlens):
+            cu_seqlens = seqlens.cumsum(0)
+            cu_zero = cu_seqlens.new_zeros(1)
+            cu_seqlens = torch.cat([cu_zero, cu_seqlens])
+            return cu_seqlens
+
+        cu_seqlens_q = _make_cu_seqlens(step_context.q_seq_length).int()
+        cu_seqlens_kv = _make_cu_seqlens(step_context.kv_seq_length).int()
+
+        setattr(step_context, 'cu_seqlens_q', cu_seqlens_q)
+        setattr(step_context, 'cu_seqlens_kv', cu_seqlens_kv)
         return step_context

@@ -324,8 +324,6 @@ MODULE_MAP.update({
 # ascend module
 ASCEND_MODULE_MAP = dict()
 
-
-
 # muxi module
 MUXI_MODULE_MAP = dict()
 
@@ -335,6 +333,19 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMuxi',
     'modeling_internlm2.InternLM2FlashAttention2':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMuxi',
+})
+
+# muxi llama
+MUXI_MODULE_MAP.update({
+    'transformers.models.llama.modeling_llama.LlamaFlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
+    'transformers.models.llama.modeling_llama.LlamaSdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
+    'transformers.models.llama.modeling_llama.LlamaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
+    # support modeling rewritten in lmdeploy
+    'modeling_llama.LlamaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
 })
 
 DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

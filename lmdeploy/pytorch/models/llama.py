@@ -328,6 +328,7 @@ class LlamaAttentionMuxi(nn.Module):
                 scaling_factor=scaling_factor,
                 out_q=query_states[None],
                 out_k=key_states[None],
+                context=context,
             )
             return query_states[0], key_states[0], value_states
 

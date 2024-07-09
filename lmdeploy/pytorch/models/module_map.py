@@ -348,4 +348,15 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
 })
 
+# muxi mixtral
+MUXI_MODULE_MAP.update({
+    'transformers.models.mixtral.modeling_mixtral.MixtralAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMuxi',
+    'transformers.models.mixtral.modeling_mixtral.MixtralFlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMuxi',
+    'transformers.models.mixtral.modeling_mixtral.MixtralSdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMuxi',
+})
+
+
 DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

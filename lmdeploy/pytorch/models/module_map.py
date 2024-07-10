@@ -356,6 +356,8 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMuxi',
     'transformers.models.mixtral.modeling_mixtral.MixtralSdpaAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMuxi',
+    'transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralSparseMoeBlockMuxi',
 })
 
 

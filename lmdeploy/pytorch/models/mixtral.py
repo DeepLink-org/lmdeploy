@@ -376,75 +376,97 @@ class PatchedMixtralSparseMoeBlock(nn.Module):
         dist.all_reduce(outputs[0])
         return outputs
 
-    # def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-    #     """rewrite moe forward."""
-
-    #     batch_size, sequence_length, hidden_dim = hidden_states.shape
-    #     hidden_states = hidden_states.view(-1, hidden_dim)
-    #     router_logits = self.gate(hidden_states)
-
-    #     routing_weights = torch.softmax(router_logits,
-    #                                     dim=-1,
-    #                                     dtype=torch.float32)
-    #     topk_weights, topk_ids = torch.topk(routing_weights,
-    #                                         self.top_k,
-    #                                         dim=-1)
-    #     del routing_weights
-    #     out_states = fused_moe(hidden_states,
-    #                            self.gate_up_weights,
-    #                            self.down_weights,
-    #                            topk_weights,
-    #                            topk_ids,
-    #                            topk=self.top_k,
-    #                            renormalize=True)
-
-    #     out_states = out_states.reshape(batch_size, sequence_length, -1)
-    #     return out_states, router_logits
-
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """ """
+        """rewrite moe forward."""
+
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
-        # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
 
-        routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
-        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
-        routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
-        # we cast back to the input dtype
-        routing_weights = routing_weights.to(hidden_states.dtype)
+        routing_weights = torch.softmax(router_logits,
+                                        dim=-1,
+                                        dtype=torch.float32)
+        topk_weights, topk_ids = torch.topk(routing_weights,
+                                            self.top_k,
+                                            dim=-1)
+        del routing_weights
+        out_states = fused_moe(hidden_states,
+                               self.gate_up_weights,
+                               self.down_weights,
+                               topk_weights,
+                               topk_ids,
+                               topk=self.top_k,
+                               renormalize=True)
 
-        final_hidden_states = torch.zeros(
-            (batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
-        )
+        out_states = out_states.reshape(batch_size, sequence_length, -1)
+        return out_states, router_logits
 
-        # One hot encode the selected experts to create an expert mask
-        # this will be used to easily index which expert is going to be sollicitated
-        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
 
-        # Loop over all available experts in the model and perform the computation on each expert
-        for expert_idx in range(self.num_experts):
-            expert_layer = self.experts[expert_idx]
-            idx, top_x = torch.where(expert_mask[expert_idx])
+class PatchedMixtralSparseMoeBlockMuxi(nn.Module):
 
-            if top_x.shape[0] == 0:
-                continue
+    def _update_model_fn(self):
+        """update model."""
+        num_experts = self.num_experts
 
-            # in torch it is faster to index using lists than torch tensors
-            top_x_list = top_x.tolist()
-            idx_list = idx.tolist()
+        def __get_meta():
+            exp = self.experts[0]
+            ffn_dim = exp.w1.weight.size(0)
+            hidden_dim = exp.w2.weight.size(0)
+            dtype = exp.w1.weight.dtype
+            device = exp.w1.weight.device
+            return ffn_dim, hidden_dim, dtype, device
 
-            # Index the correct hidden states and compute the expert hidden state for
-            # the current expert. We need to make sure to multiply the output hidden
-            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
-            current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)
-            current_hidden_states = expert_layer(current_state, routing_weights[top_x_list, idx_list, None])
+        def __copy_assign_param(param, weight):
+            """copy assign."""
+            weight.copy_(param.data)
+            param.data = weight
 
-            # However `index_add_` only support torch tensors for indexing so we'll use
-            # the `top_x` tensor here.
-            final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
-        final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
-        return final_hidden_states, router_logits
+        ffn_dim, hidden_dim, dtype, device = __get_meta()
+
+        gate_up_weights = torch.empty(num_experts,
+                                      ffn_dim * 2,
+                                      hidden_dim,
+                                      device=device,
+                                      dtype=dtype)
+        down_weights = torch.empty(num_experts,
+                                   hidden_dim,
+                                   ffn_dim,
+                                   device=device,
+                                   dtype=dtype)
+        for exp_id, exp in enumerate(self.experts):
+            __copy_assign_param(exp.w1.weight,
+                                gate_up_weights[exp_id, :ffn_dim])
+            __copy_assign_param(exp.w3.weight, gate_up_weights[exp_id,
+                                                               ffn_dim:])
+            __copy_assign_param(exp.w2.weight, down_weights[exp_id])
+
+        torch.cuda.empty_cache()
+
+        self.register_buffer('gate_up_weights', gate_up_weights)
+        self.register_buffer('down_weights', down_weights)
+
+    @classmethod
+    def _distribute_output_fn(cls, outputs, **kwargs):
+        """Distribution output hook."""
+        dist.all_reduce(outputs[0])
+        return outputs
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """rewrite moe forward."""
+
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        router_logits = self.gate(hidden_states)
+
+        out_states = fused_moe(hidden_states,
+                               self.gate_up_weights,
+                               self.down_weights,
+                               router_logits,
+                               topk=self.top_k,
+                               renormalize=True)
+
+        out_states = out_states.reshape(batch_size, sequence_length, -1)
+        return out_states, router_logits
 
 
 class PatchedMixtralModel(nn.Module):

@@ -6,7 +6,7 @@ from lmdeploy import PytorchEngineConfig
 if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
-    pipe = lmdeploy.pipeline("/home/SAIL/zhousl/Mixtral-8x7B-Instruct-v0___1",
+    pipe = lmdeploy.pipeline("/data/models/Mixtral-8x7B-Instruct-v0___1",
                             backend_config = PytorchEngineConfig(tp=4,
                                                                  block_size=16,
                                                                  device_type='muxi',

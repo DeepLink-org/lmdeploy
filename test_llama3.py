@@ -6,7 +6,7 @@ from lmdeploy import PytorchEngineConfig
 if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
-    pipe = lmdeploy.pipeline("/home/SAIL/zhousl/Meta-Llama-3-8B-Instruct",
+    pipe = lmdeploy.pipeline("/data/models/Meta-Llama-3-8B-Instruct",
                             backend_config = PytorchEngineConfig(tp=2,
                                                                  block_size=16,
                                                                  device_type='muxi',

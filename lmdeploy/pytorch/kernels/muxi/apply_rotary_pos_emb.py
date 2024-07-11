@@ -17,11 +17,14 @@ def apply_rotary_pos_emb(q_states: Tensor,
     q_states = q_states.reshape(bs, head * dim)
     k_states = k_states.reshape(bs, kv_head * dim)
 
-    new_cos = cached_cos.squeeze(-2)
-    new_cos = new_cos[..., :new_cos.shape[-1] // 2]
-    new_sin = cached_sin.squeeze(-2)
-    new_sin = new_sin[..., :new_sin.shape[-1] // 2]
-    cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+    if context and hasattr(context, "cos_sin_cache"):
+        cos_sin_cache = context.cos_sin_cache
+    else:
+        new_cos = cached_cos.squeeze(-2)
+        new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+        new_sin = cached_sin.squeeze(-2)
+        new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+        cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
 
     ops.rotary_embedding(position_ids_1d,
                         q_states,

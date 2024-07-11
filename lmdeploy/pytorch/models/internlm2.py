@@ -221,9 +221,16 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
         position_ids_1d = context.position_ids_1d
         max_kv_seq_length = context.max_kv_seq_length
 
+        if not hasattr(self, 'trans_wqkv'):
+            self.trans_wqkv = self.wqkv.weight.t().contiguous()
+            self.wqkv_bias = self.wqkv.bias
+            del self.wqkv
+
         def __qkv_proj(hidden_states):
             """qkv_proj."""
-            qkv_states = self.wqkv(hidden_states)
+            qkv_states = torch.matmul(hidden_states, self.trans_wqkv)
+            if self.wqkv_bias:
+                qkv_states = qkv_states + self.wqkv_bias
             qkv_states = rearrange(
                 qkv_states,
                 'b q (h gs d) -> (b q) h gs d',
@@ -255,6 +262,12 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                                            **kwargs)
                 context._cos = cos
                 context._sin = sin
+                new_cos = cos.squeeze(-2)
+                new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+                new_sin = sin.squeeze(-2)
+                new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+                cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                context.cos_sin_cache = cos_sin_cache
             else:
                 cos = context._cos
                 sin = context._sin
@@ -314,7 +327,13 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
         )
         attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
 
-        attn_output = self.wo(attn_output)
+        if not hasattr(self, 'trans_wo'):
+            self.trans_wo = self.wo.weight.t().contiguous()
+            self.wo_bias = self.wo.bias
+            self.wo = None
+        attn_output = torch.matmul(attn_output, self.trans_wo)
+        if self.wo_bias:
+            attn_output = attn_output + self.wo_bias
 
         return attn_output, None, past_key_value
 
@@ -364,6 +383,49 @@ class PatchedInternLM2MLP(nn.Module):
         """Distribution output hook."""
         dist.all_reduce(outputs)
         return outputs
+
+
+class PatchedInternLM2MLPMuxi(nn.Module):
+
+    def _load_weights(self, loader, rank: int, world_size: int,
+                      device: torch.device):
+        """load weights."""
+        for mod_name in ['w1', 'w3']:
+            colwise_parallelize_linear(getattr(self, mod_name),
+                                       loader,
+                                       rank=rank,
+                                       world_size=world_size,
+                                       prefix=mod_name)
+        for mod_name in ['w2']:
+            rowwise_parallelize_linear(getattr(self, mod_name),
+                                       loader,
+                                       rank=rank,
+                                       world_size=world_size,
+                                       prefix=mod_name)
+
+    @classmethod
+    def _distribute_output_fn(cls, outputs, **kwargs):
+        """Distribution output hook."""
+        dist.all_reduce(outputs)
+        return outputs
+
+    def forward(self, x):
+        # w1/w2/w3 bias is None for internlm2
+        if not hasattr(self, 'trans_w1'):
+            self.trans_w1 = self.w1.weight.t().contiguous()
+            del self.w1
+        if not hasattr(self, 'trans_w2'):
+            self.trans_w2 = self.w2.weight.t().contiguous()
+            del self.w2
+        if not hasattr(self, 'trans_w3'):
+            self.trans_w3 = self.w3.weight.t().contiguous()
+            del self.w3
+        tmp_w1 = torch.matmul(x, self.trans_w1)
+        tmp_act = self.act_fn(tmp_w1)
+        tmp_w3 = torch.matmul(x, self.trans_w3)
+        down_proj = torch.matmul(tmp_act * tmp_w3, self.trans_w2)
+
+        return down_proj
 
 
 class PatchedInternLM2Model(nn.Module):

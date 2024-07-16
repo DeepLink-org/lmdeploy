@@ -362,5 +362,14 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralSparseMoeBlockMuxi',
 })
 
+# muxi deepseek
+MODULE_MAP.update({
+    'modeling_deepseek.DeepseekV2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
+    'modeling_deepseek.DeepseekV2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
+    'modeling_deepseek.DeepseekMoE':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek.PatchedDeepseekV2MoEMuxi',
+})
 
 DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

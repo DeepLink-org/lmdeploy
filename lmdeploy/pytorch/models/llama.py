@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 import transformers
 from packaging import version
 from torch import nn
@@ -279,12 +280,30 @@ class LlamaAttentionMuxi(nn.Module):
         head_dim = self.head_dim
         hidden_size = num_heads * head_dim
 
+        if not hasattr(self, 'trans_wq'):
+            self.trans_wq = self.q_proj.weight.t().contiguous()
+            self.wq_bias = self.q_proj.bias
+            del self.q_proj
+
+            self.trans_wk = self.k_proj.weight.t().contiguous()
+            self.wk_bias = self.k_proj.bias
+            del self.k_proj
+
+            self.trans_wv = self.v_proj.weight.t().contiguous()
+            self.wv_bias = self.v_proj.bias
+            del self.v_proj
+
         def __qkv_proj(hidden_states):
             """qkv proj."""
-            query_states = self.q_proj(hidden_states)
-            key_states = self.k_proj(hidden_states)
-            value_states = self.v_proj(hidden_states)
-
+            query_states = torch.matmul(hidden_states, self.trans_wq)
+            if self.wq_bias:
+                query_states = query_states + self.wq_bias
+            key_states = torch.matmul(hidden_states, self.trans_wk)
+            if self.wk_bias:
+                key_states = key_states + self.wk_bias
+            value_states = torch.matmul(hidden_states, self.trans_wv)
+            if self.wv_bias:
+                value_states = value_states + self.wv_bias
             return query_states, key_states, value_states
 
         def __rotary_emb_fn_old(query_states, key_states, value_states):
@@ -407,7 +426,13 @@ class LlamaAttentionMuxi(nn.Module):
         attn_output = attn_output.reshape(*hidden_states.shape[:-1],
                                           hidden_size)
 
-        attn_output = self.o_proj(attn_output)
+        if not hasattr(self, 'trans_wo'):
+            self.trans_wo = self.o_proj.weight.t().contiguous()
+            self.wo_bias = self.o_proj.bias
+            del self.o_proj
+        attn_output = torch.matmul(attn_output, self.trans_wo)
+        if self.wo_bias:
+            attn_output = attn_output + self.wo_bias
 
         return attn_output, None, past_key_value
 
@@ -458,6 +483,74 @@ class LlamaMLP(nn.Module):
         """Distribution output hook."""
         dist.all_reduce(outputs)
         return outputs
+
+class LlamaMLPMuxi(nn.Module):
+
+    def _load_weights(self, loader, rank: int, world_size: int,
+                      device: torch.device):
+        """load weights."""
+        for mod_name in ['gate_proj', 'up_proj']:
+            colwise_parallelize_linear(getattr(self, mod_name),
+                                       loader,
+                                       rank=rank,
+                                       world_size=world_size,
+                                       prefix=mod_name)
+        rowwise_parallelize_linear(self.down_proj,
+                                   loader,
+                                   rank=rank,
+                                   world_size=world_size,
+                                   prefix='down_proj')
+
+    @classmethod
+    def _distribute_output_fn(cls, outputs, **kwargs):
+        """Distribution output hook."""
+        dist.all_reduce(outputs)
+        return outputs
+
+    def forward(self, x):
+        if self.config.pretraining_tp > 1:
+            slice = self.intermediate_size // self.config.pretraining_tp
+            gate_proj_slices = self.gate_proj.weight.split(slice, dim=0)
+            up_proj_slices = self.up_proj.weight.split(slice, dim=0)
+            down_proj_slices = self.down_proj.weight.split(slice, dim=1)
+
+            gate_proj = torch.cat([
+                F.linear(x, gate_proj_slices[i].t().contiguous())
+                for i in range(self.config.pretraining_tp)
+            ],
+                                  dim=-1)
+            up_proj = torch.cat([
+                F.linear(x, up_proj_slices[i].t().contiguous())
+                for i in range(self.config.pretraining_tp)
+            ],
+                                dim=-1)
+
+            intermediate_states = (self.act_fn(gate_proj) * up_proj).split(
+                slice, dim=2)
+            down_proj = [
+                F.linear(intermediate_states[i], down_proj_slices[i].t().contiguous())
+                for i in range(self.config.pretraining_tp)
+            ]
+            down_proj = sum(down_proj)
+        else:
+            # w_gate/w_up bias is None for llama3
+            if not hasattr(self, 'trans_wgate'):
+                self.trans_wgate = self.gate_proj.weight.t().contiguous()
+                del self.gate_proj
+            if not hasattr(self, 'trans_wup'):
+                self.trans_wup = self.up_proj.weight.t().contiguous()
+                del self.up_proj
+            if not hasattr(self, 'trans_wdown'):
+                self.trans_wdown = self.down_proj.weight.t().contiguous()
+                del self.down_proj
+            tmp_w1 = torch.matmul(x, self.trans_wgate)
+            tmp_act = self.act_fn(tmp_w1)
+            tmp_w2 = torch.matmul(x, self.trans_wup)
+            tmp_w3 = torch.matmul(x, self.trans_wdown)
+
+            down_proj = torch.matmul(tmp_act * tmp_w2, tmp_w3)
+
+        return down_proj
 
 
 class LlamaModel(nn.Module):

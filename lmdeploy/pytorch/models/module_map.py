@@ -348,6 +348,8 @@ MUXI_MODULE_MAP.update({
     # support modeling rewritten in lmdeploy
     'modeling_llama.LlamaAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
+    'modeling_llama.LlamaMLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
 })
 
 # muxi mixtral

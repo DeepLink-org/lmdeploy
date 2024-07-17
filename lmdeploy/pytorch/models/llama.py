@@ -320,6 +320,19 @@ class LlamaAttentionMuxi(nn.Module):
         def __rotary_emb_fn_438_fused(query_states, key_states, value_states):
             scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
             inv_freq = self.rotary_emb.inv_freq
+
+            if not hasattr(context, 'cos_sin_cache'):
+                position_ids = context.position_ids_1d[None].squeeze(0).unsqueeze(-1)
+                pos_freq = position_ids / scaling_factor * inv_freq
+
+                cos = torch.cos(pos_freq).view(1, query_states[None].shape[1], -1).repeat(1, 1, 2).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, query_states[None].shape[1], -1).repeat(1, 1, 2).to(query_states.dtype)
+
+                new_cos = cos[..., :cos.shape[-1] // 2]
+                new_sin = sin[..., :sin.shape[-1] // 2]
+
+                context.cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+
             query_states, key_states = fused_rotary_emb(
                 query_states[None],
                 key_states[None],

@@ -758,7 +758,7 @@ class BaseModelAgent(AutoModelAgent):
         """
         global record_count
         record_count = record_count + 1
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         # if True:
             with record_function("model_forward"):
                 output = self._forward_impl(inputs,

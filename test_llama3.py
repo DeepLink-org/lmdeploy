@@ -7,7 +7,7 @@ if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
     pipe = lmdeploy.pipeline("/data/models/Meta-Llama-3-8B-Instruct",
-                            backend_config = PytorchEngineConfig(tp=2,
+                            backend_config = PytorchEngineConfig(tp=1,
                                                                  block_size=16,
                                                                  device_type='muxi',
                                                                  cache_max_entry_count=0.4))
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     # question = ["Please introduce China.", "How are you?"]
     # question = ["Please introduce Shanghai."]
     # question = ["Shanghai is"]
-    question = ["Shanghai is"]
+    question = ["Hello, my name is"]
     response = pipe(question, do_preprocess=True)
     for idx, r in enumerate(response):
         print(f"Q: {question[idx]}")

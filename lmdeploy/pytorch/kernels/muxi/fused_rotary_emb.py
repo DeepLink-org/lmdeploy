@@ -31,21 +31,21 @@ def fused_rotary_emb(
     out_k: Tensor = None,
     context=None,
 ):
-    _, seq_len, head, dim = query_states.shape
+    bs, seq_len, head, dim = query_states.shape
     kv_head = key_states.shape[2]
     query_states = query_states.reshape(seq_len, head * dim)
     key_states = key_states.reshape(seq_len, kv_head * dim)
 
     position_ids = position_ids.squeeze(0).unsqueeze(-1)
     pos_freq = position_ids / scaling_factor * inv_freq
-    cos = torch.cos(pos_freq).view(seq_len, -1).repeat(1, 2).to(query_states.dtype)
-    sin = torch.sin(pos_freq).view(seq_len, -1).repeat(1, 2).to(query_states.dtype)
+    cos = torch.cos(pos_freq).view(1, seq_len, -1).repeat(1, 1, 2).to(query_states.dtype)
+    sin = torch.sin(pos_freq).view(1, seq_len, -1).repeat(1, 1, 2).to(query_states.dtype)
 
     # query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
-    new_cos = cos.squeeze(-2)
+    new_cos = cos
     new_cos = new_cos[..., :new_cos.shape[-1] // 2]
-    new_sin = sin.squeeze(-2)
+    new_sin = sin
     new_sin = new_sin[..., :new_sin.shape[-1] // 2]
     cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
 
@@ -55,4 +55,4 @@ def fused_rotary_emb(
                         dim,
                         cos_sin_cache,
                         True)
-    return query_states.view(seq_len, head, dim), key_states.view(seq_len, kv_head, dim)
+    return query_states.view(bs, seq_len, head, dim), key_states.view(bs, seq_len, kv_head, dim)

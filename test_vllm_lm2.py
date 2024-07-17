@@ -17,8 +17,7 @@ prompts = [
 sampling_params = SamplingParams()
 
 # Create an LLM.
-#llm = LLM(model="/data/models/internlm2-chat-20b",
-llm = LLM(model="/root/internlm2-chat-7b",
+llm = LLM(model="/data/models/internlm2-chat-7b",
           tensor_parallel_size=1, #   worker_use_ray=False,
           trust_remote_code=True,
           enforce_eager=False)

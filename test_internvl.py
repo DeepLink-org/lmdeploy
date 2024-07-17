@@ -4,7 +4,7 @@ from lmdeploy.vl import load_image
 from torch.profiler import profile, record_function, ProfilerActivity
 
 def main():
-    pipe = pipeline('/root/Mini-InternVL-Chat-2B-V1-5', backend_config = PytorchEngineConfig(tp=2, device_type='muxi', block_size=16,))
+    pipe = pipeline('/data/models/Mini-InternVL-Chat-2B-V1-5', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16,))
 
     #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
     #response = pipe(('describe this image', image))

@@ -12,7 +12,7 @@ if __name__ == "__main__":
                                                                  device_type='muxi',
                                                                  cache_max_entry_count=0.4))
     # question = ["How are you?", "Please introduce China.", "Introduce Shanghai AI Lab"]
-    question = ["Shanghai is"]
+    question = ["Hello, my name is"]
     response = pipe(question, do_preprocess=True)
     for idx, r in enumerate(response):
         print(f"Q: {question[idx]}")

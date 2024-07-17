@@ -410,11 +410,14 @@ def main():
                 )
             elif args.backend == 'pytorch':
                 engine_config = PytorchEngineConfig(
-                    cache_max_entry_count=args.cache_max_entry_count,
-                    block_size=args.cache_block_seq_len,
+                    #cache_max_entry_count=args.cache_max_entry_count,
+                    cache_max_entry_count=0.5,
+                    #block_size=args.cache_block_seq_len,
                     session_len=session_len,
                     tp=args.tp,
                     thread_safe=True,
+                    block_size=16,
+                    device_type='muxi',
                     enable_prefix_caching=args.enable_prefix_caching,
                 )
             gen_config = EngineGenerationConfig(

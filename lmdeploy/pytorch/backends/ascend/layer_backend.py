@@ -3,22 +3,37 @@ from typing import Tuple
 
 import torch
 
+from lmdeploy.utils import get_logger
+
 from ..base import LayerType
 from ..default import DefaultLayersBackend
 
+logger = get_logger('lmdeploy')
+
 
 class AscendLayersBackend(DefaultLayersBackend):
+    """ascend layer backend."""
 
     @staticmethod
     def get_name() -> str:
+        """backend name."""
         raise 'ascend'
 
     @classmethod
     def get_layer_impl_builder(cls, layer_type: LayerType):
+        """get ascend layer builder."""
         if layer_type == LayerType.Attention:
-            from .attention import AscendAttentionImpl
-            return AscendAttentionImpl
+            from .attention import AscendAttentionBuilder
+            return AscendAttentionBuilder
+        elif layer_type == LayerType.ApplyRotaryEmb:
+            from .apply_rotary_emb import AscendApplyRotaryEmbBuilder
+            return AscendApplyRotaryEmbBuilder
+        elif layer_type == LayerType.RMSNorm:
+            from .norm import AscendRMSNormBuilder
+            return AscendRMSNormBuilder
         else:
+            logger.debug(
+                f'Op {layer_type} fallback to default implementation.')
             return super().get_layer_impl_builder(layer_type)
 
     @staticmethod
@@ -57,29 +72,43 @@ class AscendLayersBackend(DefaultLayersBackend):
         """update step context."""
         kv_start_indices, attention_mask = [], []
         _, block_size, _, _ = step_context.kv_caches[0][0].shape
+        device = step_context.block_offsets.device
         for i in range(step_context.q_start_loc.size(0)):
+            q_seq_len = int(step_context.q_seqlens[i])
+            kv_seq_len = int(step_context.kv_seqlens[i])
             single_attention_mask = torch.logical_not(
                 torch.tril(
-                    torch.ones(step_context.q_seq_length[i],
-                               step_context.kv_seq_length[i],
-                               dtype=torch.bool).cuda(),
-                    diagonal=step_context.kv_seq_length[i] -
-                    step_context.q_seq_length[i],
+                    torch.ones(q_seq_len, kv_seq_len,
+                               dtype=torch.bool, device=device),
+                    diagonal=kv_seq_len - q_seq_len,
                 ))
             attention_mask.append(single_attention_mask)
-            history_length = step_context.history_lengths[i]
+            history_length = kv_seq_len - q_seq_len
             block_idx = history_length // block_size
             block_loc = step_context.block_offsets[i][block_idx]
             token_loc = history_length % block_size
-            for _ in range(step_context.q_seq_length[i]):
-                kv_start_indices.append(block_loc * block_size + token_loc)
-                if _ == step_context.q_seq_length[i] - 1:
+            for _ in range(q_seq_len):
+                kv_start_indices.append([block_loc * block_size + token_loc])
+                if _ == q_seq_len - 1:
                     break
                 token_loc = (token_loc + 1) % block_size
                 block_idx = block_idx if token_loc else block_idx + 1
                 block_loc = step_context.block_offsets[i][block_idx]
         kv_start_indices = torch.tensor(
-            kv_start_indices, device=step_context.block_offsets.device)
-        setattr(step_context, 'kv_start_indices', kv_start_indices)
-        setattr(step_context, 'attention_mask', attention_mask)
+            kv_start_indices, device=device)
+
+        attn_meta_cls = cls.get_attention_metadata_cls()
+        attn_metadata = attn_meta_cls(
+            step_context.is_decoding,
+            step_context.block_offsets,
+            q_start_loc=step_context.q_start_loc,
+            q_seqlens=step_context.q_seqlens,
+            kv_seqlens=step_context.kv_seqlens,
+            kv_start_indices=kv_start_indices,
+            attention_mask=attention_mask
+        )
+        if not step_context.is_decoding:
+            attn_metadata.unpaged_prefill_flag = \
+                (step_context.q_seqlens == step_context.kv_seqlens).tolist()
+        step_context.attn_metadata = attn_metadata
         return step_context

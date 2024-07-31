@@ -50,8 +50,7 @@ class AscendLayersBackend(DefaultLayersBackend):
     ) -> Tuple[int, ...]:
         return (
             block_size,
-            num_heads,
-            head_size,
+            num_heads * head_size,
         )
 
     @staticmethod
@@ -63,15 +62,14 @@ class AscendLayersBackend(DefaultLayersBackend):
     ) -> Tuple[int, ...]:
         return (
             block_size,
-            num_heads,
-            head_size,
+            num_heads * head_size,
         )
 
     @classmethod
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
-        _, block_size, _, _ = step_context.kv_caches[0][0].shape
+        _, block_size, _ = step_context.kv_caches[0][0].shape
         device = step_context.block_offsets.device
         for i in range(step_context.q_start_loc.size(0)):
             q_seq_len = int(step_context.q_seqlens[i])
@@ -105,10 +103,12 @@ class AscendLayersBackend(DefaultLayersBackend):
             q_seqlens=step_context.q_seqlens,
             kv_seqlens=step_context.kv_seqlens,
             kv_start_indices=kv_start_indices,
+            block_size=block_size,
             attention_mask=attention_mask
         )
         if not step_context.is_decoding:
-            attn_metadata.unpaged_prefill_flag = \
-                (step_context.q_seqlens == step_context.kv_seqlens).tolist()
+            attn_metadata.is_unpaged_prefill = \
+                all((step_context.q_seqlens ==
+                     step_context.kv_seqlens).tolist())
         step_context.attn_metadata = attn_metadata
         return step_context

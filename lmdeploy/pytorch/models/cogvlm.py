@@ -390,9 +390,9 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        query_states = query_states.view(-1, num_heads, head_dim)
-        key_states = key_states.view(-1, num_kv_heads, head_dim)
-        value_states = value_states.view(-1, num_kv_heads, head_dim)
+        query_states = query_states.reshape(-1, num_heads * head_dim)
+        key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)

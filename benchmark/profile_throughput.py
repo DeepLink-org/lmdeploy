@@ -326,6 +326,7 @@ def main():
             max_batch_size=args.concurrency,
             tp=args.tp,
             thread_safe=True,
+            block_size=16,
             device_type='muxi',
             enable_prefix_caching=args.enable_prefix_caching,
         )

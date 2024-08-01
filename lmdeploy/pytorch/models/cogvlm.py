@@ -386,7 +386,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 head_dim,
                 context=context,
             )
-            return query_states[0], key_states[0], value_states
+            return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 

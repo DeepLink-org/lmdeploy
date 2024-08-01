@@ -804,6 +804,7 @@ class InternLM2DecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        residual: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor,
                                                  torch.FloatTensor]]]:
         """
@@ -820,9 +821,10 @@ class InternLM2DecoderLayer(nn.Module):
                 (see `past_key_values`).
             past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
         """
-        residual = hidden_states
-
-        hidden_states = self.attention_norm(hidden_states)
+        if residual is None:
+            residual = hidden_states
+        else:
+            hidden_states, residual = self.attention_norm(hidden_states, residual)
 
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.attention(
@@ -834,15 +836,16 @@ class InternLM2DecoderLayer(nn.Module):
             use_cache=use_cache,
             cache_position=cache_position,
         )
-        hidden_states = residual + hidden_states
+        # hidden_states = residual + hidden_states
 
         # Fully Connected
-        residual = hidden_states
-        hidden_states = self.ffn_norm(hidden_states)
+        # residual = hidden_states
+        hidden_states, residual = self.ffn_norm(hidden_states, residual)
+        # import pdb; pdb.set_trace()
         hidden_states = self.feed_forward(hidden_states)
-        hidden_states = residual + hidden_states
+        # hidden_states = residual + hidden_states
 
-        outputs = (hidden_states, )
+        outputs = (hidden_states, residual)
 
         if output_attentions:
             outputs += (self_attn_weights, )

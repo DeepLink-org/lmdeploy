@@ -21,11 +21,11 @@ def paged_attention_fwd(
     value_cache: Tensor,
     attn_output: Tensor,
     block_offsets: Tensor,
-    q_start_loc: Tensor,
     q_seqlens: Tensor,
     kv_seqlens: Tensor,
-    max_seqlen: int,
-    window_size: int,
+    max_q_seq_length: int,
+    max_kv_seq_length: int,
+    window_size: None,
     context: None,
 ):
     """Paged Attention forward.
@@ -45,18 +45,16 @@ def paged_attention_fwd(
 
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
     if not is_decoding:
-        block_num, head, block_size, dim = value_cache.size()
         _, head, dim = key_states.size()
-        if context and hasattr(context, 'cu_seqlens_q'):
-            cu_seqlens_q = context.cu_seqlens_q
-            cu_seqlens_kv = context.cu_seqlens_kv
-            max_seqlen_q = context.max_q_seq_length
-            max_seqlen_kv = context.max_kv_seq_length
-        else:
-            cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
-            cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
-            max_seqlen_q = q_seqlens.max().item()
-            max_seqlen_kv = kv_seqlens.max().item()
+        # if context and hasattr(context, 'cu_seqlens_q'):
+        cu_seqlens_q = context.cu_seqlens_q
+        cu_seqlens_kv = context.cu_seqlens_kv
+        # else:
+        #     cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
+        #     cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
+        #     max_seqlen_q = q_seqlens.max().item()
+        #     max_seqlen_kv = kv_seqlens.max().item()
+ 
         if window_size:
             win_size = (window_size, window_size)
         else:
@@ -67,17 +65,17 @@ def paged_attention_fwd(
             v=value_states,
             cu_seqlens_q=cu_seqlens_q,
             cu_seqlens_k=cu_seqlens_kv,
-            max_seqlen_q=max_seqlen_q,
-            max_seqlen_k=max_seqlen_kv,
+            max_seqlen_q=max_q_seq_length,
+            max_seqlen_k=max_kv_seq_length,
             softmax_scale=float(1 / math.sqrt(dim)),
             causal=True,
             window_size=win_size,
         ))
     else:
-        if context and hasattr(context, 'max_kv_seq_length'):
-            max_seqlen_kv = context.max_kv_seq_length
-        else:
-            max_seqlen_kv = kv_seqlens.max().item()
+        # if context and hasattr(context, 'max_kv_seq_length'):
+        # max_seqlen_kv = context.max_kv_seq_length
+        # else:
+        #     max_seqlen_kv = kv_seqlens.max().item()
         block_num, head, block_size, dim = value_cache.size()
         vllm_ops.ops.paged_attention_v1(
             attn_output,
@@ -86,10 +84,10 @@ def paged_attention_fwd(
             value_cache,
             head,
             float(1 / math.sqrt(dim)), # scale
-            block_offsets.to(torch.int32),
-            kv_seqlens.to(torch.int32),
+            block_offsets,
+            kv_seqlens,
             block_size,
-            max_seqlen_kv,
+            max_kv_seq_length,
             None,
             'auto',
         )

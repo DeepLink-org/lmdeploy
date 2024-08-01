@@ -4,7 +4,8 @@ import triton
 import triton.language as tl
 from torch import Tensor
 
-from .triton_utils import get_kernel_meta, wrap_jit_func
+# from . import get_kernel_meta, wrap_jit_func
+from triton_utils import get_kernel_meta, wrap_jit_func
 
 
 @wrap_jit_func(type_hint=dict(
@@ -115,3 +116,4 @@ if __name__ == '__main__':
     test_rms_norm(1, 8128, 5120, torch.float32)
     test_rms_norm(1, 992, 128, torch.float16)
     test_rms_norm(1, 65537, 128, torch.float32)
+    print("success!", flush=True)

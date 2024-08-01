@@ -50,4 +50,8 @@ class MUXIDeviceUtils(BaseDeviceUtils):
 
         setattr(step_context, 'cu_seqlens_q', cu_seqlens_q)
         setattr(step_context, 'cu_seqlens_kv', cu_seqlens_kv)
+
+        step_context.block_offsets = step_context.block_offsets.to(torch.int32)
+        step_context.kv_seq_length = step_context.kv_seq_length.to(torch.int32)
+
         return step_context

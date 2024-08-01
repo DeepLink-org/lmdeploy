@@ -156,10 +156,83 @@ def _update_model(model: torch.nn.Module):
     for _, child in model.named_children():
         _update_model(child)
 
+    # trans weights
+    if hasattr(model, "weight"):
+        if isinstance(model.weight, torch.nn.parameter.Parameter):
+            model.weight.data = model.weight.data.contiguous()
+        elif isinstance(model.weight, torch.Tensor):
+            model.weight = model.weight.contiguous()
+        else:
+            raise ValueError(f"Unsupported weight type: {type(model.weight)}.")
+    if hasattr(model, "q_proj"):
+        model.trans_wq = model.q_proj.weight.t().contiguous()
+        model.wq_bias = model.q_proj.bias
+    if hasattr(model, "k_proj"):
+        model.trans_wk = model.k_proj.weight.t().contiguous()
+        model.wk_bias = model.k_proj.bias
+    if hasattr(model, "v_proj"):
+        model.trans_wv = model.v_proj.weight.t().contiguous()
+        model.wv_bias = model.v_proj.bias
+    if hasattr(model, 'o_proj'):
+        model.trans_wo = model.o_proj.weight.t().contiguous()
+        model.wo_bias = model.o_proj.bias
+    if hasattr(model, "trans_wq") and hasattr(model, "trans_wk") and hasattr(model, 'trans_wv'):
+        model.trans_w_qkv = torch.cat((model.trans_wq, model.trans_wk, model.trans_wv), dim=-1)
+        head_dim = model.head_dim
+        kv_groups = model.num_key_value_groups
+        size = model.trans_w_qkv.shape[0]
+        model.trans_w_qkv = model.trans_w_qkv.reshape(size, -1, kv_groups + 2, head_dim)
+        wq, wk, wv = model.trans_w_qkv.split([kv_groups, 1, 1], dim=-2)
+        wq = wq.reshape(size, -1)
+        wk = wk.reshape(size, -1)
+        wv = wv.reshape(size, -1)
+        model.trans_w_qkv = torch.cat([wq, wk, wv], dim=-1)
+        # del model.trans_wq
+        # del model.trans_wk
+        # del model.trans_wv
+
+    if hasattr(model, 'gate_proj'):
+        model.trans_wgate = model.gate_proj.weight.t().contiguous()
+    if hasattr(model, 'up_proj'):
+        model.trans_wup = model.up_proj.weight.t().contiguous()
+    if hasattr(model, 'down_proj'):
+        model.trans_wdown = model.down_proj.weight.t().contiguous()
+    if hasattr(model, 'trans_wgate') and hasattr(model, 'trans_wup'):
+        model.trans_wgate_up = torch.cat((model.trans_wgate, model.trans_wup), dim=-1)
+        del model.trans_wgate
+        del model.trans_wup
+
+    if hasattr(model, 'wqkv'):
+        model.trans_wqkv = model.wqkv.weight.t().contiguous()
+        model.wqkv_bias = model.wqkv.bias
+        head_dim = model.head_dim
+        kv_groups = model.num_key_value_groups
+        size = model.trans_wqkv.shape[0]
+        model.trans_wqkv = model.trans_wqkv.reshape(size, -1, kv_groups + 2, head_dim)
+        wq, wk, wv = model.trans_wqkv.split([kv_groups, 1, 1], dim=-2)
+        wq = wq.reshape(size, -1)
+        wk = wk.reshape(size, -1)
+        wv = wv.reshape(size, -1)
+        model.trans_wqkv = torch.cat([wq, wk, wv], dim=-1)
+
+    if hasattr(model, 'wo'):
+        model.trans_wo = model.wo.weight.t().contiguous()
+        model.wo_bias = model.wo.bias
+    if hasattr(model, 'w1'):
+        model.trans_w1 = model.w1.weight.t().contiguous()
+    if hasattr(model, 'w2'):
+        model.trans_w2 = model.w2.weight.t().contiguous()
+    if hasattr(model, 'w3'):
+        model.trans_w3 = model.w3.weight.t().contiguous()
+    if hasattr(model, 'trans_w1') and hasattr(model, 'trans_w3'):
+        model.trans_w13 = torch.cat((model.trans_w1, model.trans_w3), dim=-1)
+        del model.trans_w1
+        del model.trans_w3
+
     if hasattr(model, '_update_model_fn'):
         model._update_model_fn()
 
-
+    
 def update_model(model: torch.nn.Module):
     """update model."""
     return _update_model(model)

@@ -11,9 +11,10 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
     # x = 32 // k_caches.element_size()
     # k_caches shape: [block_num, kv_head_num, head_size // x, block_size, x]
     # v_caches shape: [block_num, kv_head_num, block_size, head_size]
+
     vllm_ops.cache_ops.reshape_and_cache_new(
         k_states,
-        v_states.contiguous(),
+        v_states,
         k_caches,
         v_caches,
         context.kv_start_indices,

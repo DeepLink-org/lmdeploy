@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 
 LMDEPLOY_PYTORCH_MODEL_PATH = 'lmdeploy.pytorch.models'
+LMDEPLOY_PYTORCH_MODELING_PATH = 'lmdeploy.pytorch.modeling'
 
 # llama
 MODULE_MAP = {
@@ -21,7 +22,6 @@ MODULE_MAP = {
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttention',
     'modeling_llama.LlamaModel':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
-    'modeling_llama.LlamaMLP': f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLP',
 }
 
 # Falcon Models in transformer / on hub
@@ -329,6 +329,8 @@ MUXI_MODULE_MAP = dict()
 
 # muxi internlm2
 MUXI_MODULE_MAP.update({
+    'modeling_internlm2.InternLM2DecoderLayer':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2DecoderLayerMuxi',
     'modeling_internlm2.InternLM2Attention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMuxi',
     'modeling_internlm2.InternLM2FlashAttention2':
@@ -345,11 +347,16 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
     'transformers.models.llama.modeling_llama.LlamaAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
+    'transformers.models.llama.modeling_llama.LlamaMLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
+    'transformers.models.llama.modeling_llama.LlamaDecoderLayer':
+    f'{LMDEPLOY_PYTORCH_MODELING_PATH}.modeling_llama.LlamaDecoderLayer',
     # support modeling rewritten in lmdeploy
     'modeling_llama.LlamaAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMuxi',
     'modeling_llama.LlamaMLP':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
+    
 })
 
 # muxi mixtral
@@ -365,13 +372,23 @@ MUXI_MODULE_MAP.update({
 })
 
 # muxi deepseek
-MODULE_MAP.update({
+MUXI_MODULE_MAP.update({
     'modeling_deepseek.DeepseekV2Attention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
     'modeling_deepseek.DeepseekV2FlashAttention2':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
     'modeling_deepseek.DeepseekMoE':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek.PatchedDeepseekV2MoEMuxi',
+})
+
+# muxi cogvlm
+MODULE_MAP.update({
+    'modeling_cogvlm.MLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
+    'modeling_cogvlm.VisionExpertMLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLP',
+    'modeling_cogvlm.VisionExpertAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionMuxi',
 })
 
 DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

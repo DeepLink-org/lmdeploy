@@ -369,20 +369,21 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             inv_freq = self.rotary_emb.inv_freq
 
             position_ids_1d = context.position_ids_1d[None]
+            position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
 
             if not hasattr(context, 'cos_sin_cache'):
-                position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
                 pos_freq = position_ids_t / scaling_factor * inv_freq
 
-                cos = torch.cos(pos_freq).view(1, query_states[None].shape[1], -1).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, query_states[None].shape[1], -1).to(query_states.dtype)
+                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
 
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
             query_states, key_states = fused_rotary_emb(
                 query_states[None],
                 key_states[None],
-                position_ids[None],
+                position_ids_t,
+                head_dim,
                 context=context,
             )
             return query_states[0], key_states[0], value_states

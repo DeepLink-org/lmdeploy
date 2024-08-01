@@ -322,7 +322,6 @@ def main():
         engine_config = PytorchEngineConfig(
             session_len=args.session_len,
             cache_max_entry_count=args.cache_max_entry_count,
-            block_size=args.cache_block_seq_len,
             max_batch_size=args.concurrency,
             tp=args.tp,
             thread_safe=True,

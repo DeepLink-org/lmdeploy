@@ -374,8 +374,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             if not hasattr(context, 'cos_sin_cache'):
                 pos_freq = position_ids_t / scaling_factor * inv_freq
 
-                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
 
                 context.cos = cos
                 context.sin = sin

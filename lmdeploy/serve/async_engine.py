@@ -394,9 +394,7 @@ class AsyncEngine(LogitsMixin):
         if use_tqdm:
             import tqdm
             pbar = tqdm.tqdm(total=len(prompts))
-        import pdb; pdb.set_trace()
         for i, prompt in enumerate(prompts):
-            import pdb; pdb.set_trace()
             generators.append(
                 self.generate(prompt,
                               i,
@@ -428,7 +426,6 @@ class AsyncEngine(LogitsMixin):
             await asyncio.gather(
                 *[_inner_call(i, generators[i]) for i in range(len(prompts))])
 
-        import pdb; pdb.set_trace()
         _get_event_loop().run_until_complete(gather())
         outputs = outputs[0] if need_list_wrap else outputs
         return outputs
@@ -548,6 +545,7 @@ class AsyncEngine(LogitsMixin):
             do_preprocess (bool): whether pre-process the messages. Default to
                 True, which means chat_template will be applied.
         """
+        import pdb; pdb.set_trace()
         if str(session_id) not in self.id2step:
             self.id2step[str(session_id)] = 0
         if step != 0:
@@ -567,6 +565,7 @@ class AsyncEngine(LogitsMixin):
         prompt_input = await self._get_prompt_input(prompt, do_preprocess,
                                                     sequence_start,
                                                     adapter_name)
+        import pdb; pdb.set_trace()
         prompt = prompt_input['prompt']
         input_ids = prompt_input['input_ids']
         finish_reason = None
@@ -602,6 +601,7 @@ class AsyncEngine(LogitsMixin):
                 await self.end_session(session_id)
         else:
             generator = await self.get_generator(False, session_id)
+            import pdb; pdb.set_trace()
             async with self.safe_run(session_id):
                 state = DetokenizeState(len(input_ids))
                 response = ''

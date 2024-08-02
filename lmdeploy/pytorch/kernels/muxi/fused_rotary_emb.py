@@ -14,7 +14,7 @@ def rotate_half(x):
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     """Applies Rotary Position Embedding to the query and key tensors."""
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
@@ -38,5 +38,5 @@ def fused_rotary_emb(
     #                     head_dim,
     #                     context.cos_sin_cache,
     #                     True)
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     return query_states, key_states

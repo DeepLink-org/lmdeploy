@@ -381,7 +381,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 context.sin = sin
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             query_states, key_states = fused_rotary_emb(
                 query_states[None],
                 key_states[None],

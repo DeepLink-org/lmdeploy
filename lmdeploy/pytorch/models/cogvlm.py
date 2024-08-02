@@ -377,8 +377,11 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
                 sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
 
+                context.cos = cos
+                context.sin = sin
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
+            import pdb; pdb.set_trace()
             query_states, key_states = fused_rotary_emb(
                 query_states[None],
                 key_states[None],
@@ -390,8 +393,10 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        query_states = query_states.reshape(-1, num_heads * head_dim)
-        key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        # query_states = query_states.reshape(-1, num_heads, head_dim)
+        # key_states = key_states.reshape(-1, num_kv_heads, head_dim)
+        # query_states = query_states.reshape(-1, num_heads * head_dim)
+        # key_states = key_states.reshape(-1, num_kv_heads * head_dim)
         value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
         query_states, key_states, value_states = __rotary_emb_fn(

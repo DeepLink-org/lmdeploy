@@ -567,7 +567,8 @@ def _get_cogvlm_position_ids(context):
             context.vision_token_mask = vision_token_mask_new
             context.language_token_mask = language_token_mask_new
         else:
-            position_ids = context.attention_mask[0].long().cumsum(-1) - 1
+            #import pdb; pdb.set_trace()
+            position_ids = context.attention_mask.long().cumsum(-1) - 1
             position_ids += (inputs.history_lengths -
                              position_id_offsets).unsqueeze(-1)
             device = position_ids.device

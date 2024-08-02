@@ -394,7 +394,9 @@ class AsyncEngine(LogitsMixin):
         if use_tqdm:
             import tqdm
             pbar = tqdm.tqdm(total=len(prompts))
+        import pdb; pdb.set_trace()
         for i, prompt in enumerate(prompts):
+            import pdb; pdb.set_trace()
             generators.append(
                 self.generate(prompt,
                               i,
@@ -407,7 +409,9 @@ class AsyncEngine(LogitsMixin):
                               **kwargs))
 
         async def _inner_call(i, generator):
+            import pdb; pdb.set_trace()
             async for out in generator:
+                import pdb; pdb.set_trace()
                 outputs[i].text += out.response
                 outputs[i].generate_token_len = out.generate_token_len
                 outputs[i].input_token_len = out.input_token_len
@@ -420,11 +424,11 @@ class AsyncEngine(LogitsMixin):
                     outputs[i].logprobs.extend(out.logprobs)
                 if use_tqdm and out.finish_reason is not None:
                     pbar.update(1)
-
         async def gather():
             await asyncio.gather(
                 *[_inner_call(i, generators[i]) for i in range(len(prompts))])
 
+        import pdb; pdb.set_trace()
         _get_event_loop().run_until_complete(gather())
         outputs = outputs[0] if need_list_wrap else outputs
         return outputs

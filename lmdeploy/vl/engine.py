@@ -120,7 +120,7 @@ class ImageEncoder:
 
     async def async_infer(self, inputs: List[Image]):
         """async infer."""
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         outputs = asyncio.Queue()
         item = (inputs, outputs)
         self.req_que.put_nowait(item)

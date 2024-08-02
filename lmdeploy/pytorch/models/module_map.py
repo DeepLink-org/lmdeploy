@@ -385,8 +385,6 @@ MUXI_MODULE_MAP.update({
 MODULE_MAP.update({
     'modeling_cogvlm.MLP':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
-    'modeling_cogvlm.VisionExpertMLP':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLP',
     'modeling_cogvlm.VisionExpertAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionMuxi',
 })

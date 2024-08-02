@@ -324,6 +324,8 @@ def patch(
 
     model = _patch(model, _patch_context, module_map=module_map)
 
+    import pdb; pdb.set_trace()
+
     if world_size > 1:
         model = _dist_model(model, rank)
 

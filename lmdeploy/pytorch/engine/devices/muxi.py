@@ -38,7 +38,7 @@ class MUXIDeviceUtils(BaseDeviceUtils):
         kv_start_indices = torch.tensor(
             kv_start_indices, device=step_context.block_offsets.device)
         #import pdb; pdb.set_trace()
-        attention_mask = torch.stack(attention_mask)
+        #attention_mask = torch.stack(attention_mask)
         setattr(step_context, 'kv_start_indices', kv_start_indices)
         # setattr(step_context, 'attention_mask', attention_mask)
 

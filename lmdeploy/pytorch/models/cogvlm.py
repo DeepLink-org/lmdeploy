@@ -386,8 +386,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
             # import pdb; pdb.set_trace()
             query_states, key_states = fused_rotary_emb(
-                query_states,
-                key_states,
+                query_states[None],
+                key_states[None],
                 position_ids_t,
                 head_dim,
                 context=context,

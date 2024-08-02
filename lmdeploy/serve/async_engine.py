@@ -407,9 +407,9 @@ class AsyncEngine(LogitsMixin):
                               **kwargs))
 
         async def _inner_call(i, generator):
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             async for out in generator:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 outputs[i].text += out.response
                 outputs[i].generate_token_len = out.generate_token_len
                 outputs[i].input_token_len = out.input_token_len
@@ -509,14 +509,14 @@ class AsyncEngine(LogitsMixin):
 
     async def _get_prompt_input(self, prompt: str, do_preprocess: bool,
                                 sequence_start: bool, adapter_name: str):
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         if do_preprocess:
             # use adapter's chat template if possible
             chat_template = self.chat_template
             if adapter_name in MODELS.module_dict:
                 chat_template = MODELS.module_dict[adapter_name]()
             prompt = chat_template.messages2prompt(prompt, sequence_start)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         input_ids = self.tokenizer.encode(prompt, add_bos=sequence_start)
         return {'prompt': prompt, 'input_ids': input_ids}
 
@@ -547,7 +547,7 @@ class AsyncEngine(LogitsMixin):
             do_preprocess (bool): whether pre-process the messages. Default to
                 True, which means chat_template will be applied.
         """
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         if str(session_id) not in self.id2step:
             self.id2step[str(session_id)] = 0
         if step != 0:
@@ -564,11 +564,11 @@ class AsyncEngine(LogitsMixin):
             gen_config.random_seed = random.getrandbits(64)
         prompt = messages
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         prompt_input = await self._get_prompt_input(prompt, do_preprocess,
                                                     sequence_start,
                                                     adapter_name)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         prompt = prompt_input['prompt']
         input_ids = prompt_input['input_ids']
         finish_reason = None
@@ -604,7 +604,7 @@ class AsyncEngine(LogitsMixin):
                 await self.end_session(session_id)
         else:
             generator = await self.get_generator(False, session_id)
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             async with self.safe_run(session_id):
                 state = DetokenizeState(len(input_ids))
                 response = ''

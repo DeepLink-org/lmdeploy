@@ -336,6 +336,7 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
         max_q_seq_length = context.max_q_seq_length
         max_kv_seq_length = context.max_kv_seq_length
         num_heads = self.num_heads // world_size
+        num_kv_heads = self.num_key_value_heads // world_size
         q_len = hidden_states.size(1)
 
         def __q_proj(hidden_states, nope_size: int, pe_size: int):
@@ -393,14 +394,22 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
                 cos = context._cos
                 sin = context._sin
 
-            apply_rotary_pos_emb(q_pe,
-                                 k_pe,
-                                 cos,
-                                 sin,
-                                 position_ids,
-                                 context.position_ids_1d,
-                                 q_embed=out_q_pe,
-                                 k_embed=out_k_pe)
+            if not hasattr(context, 'cos_sin_cache'):
+                new_cos = cos.squeeze(-2)
+                new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+                new_sin = sin.squeeze(-2)
+                new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+                cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                context.cos_sin_cache = cos_sin_cache
+
+            out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
+                                                      k_pe,
+                                                      position_ids,
+                                                      context.position_ids_1d,
+                                                      num_heads,
+                                                      num_kv_heads,
+                                                      self.head_dim,
+                                                      context=context)
             return out_q_pe, out_k_pe
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(

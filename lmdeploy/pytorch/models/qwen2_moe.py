@@ -237,6 +237,7 @@ class PatchedQwen2MoeModelMuxi(nn.Module):
             inputs_embeds = self.embed_tokens(input_ids)
 
         hidden_states = inputs_embeds
+        residual = None
 
         for idx, decoder_layer in enumerate(self.layers):
 
@@ -245,10 +246,11 @@ class PatchedQwen2MoeModelMuxi(nn.Module):
                 hidden_states,
                 position_ids=position_ids,
                 past_key_value=past_key_value,
+                residual = residual,
             )
-            hidden_states = layer_outputs[0]
+            hidden_states, residual = layer_outputs[0], layer_outputs[1]
 
-        hidden_states = self.norm(hidden_states)
+        hidden_states, _ = self.norm(hidden_states, residual)
 
         return MoeModelOutputWithPast(last_hidden_state=hidden_states,
                                       past_key_values=past_key_values,

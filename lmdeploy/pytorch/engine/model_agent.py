@@ -502,6 +502,7 @@ def model_forward(
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         if True:
             with record_function("model_forward1"):
+                # import pdb; pdb.set_trace()
                 output = patched_model.patched_forward(
                     input_ids=inputs.input_ids,
                     position_ids=context.position_ids,

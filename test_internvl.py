@@ -7,7 +7,7 @@ def main():
     pipe = pipeline('/data/models/Mini-InternVL-Chat-2B-V1-5', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16,))
 
     #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
-    #response = pipe(('describe this image', image))
+    #response = pipe(('describe this image'))
     #print(response)
     prompts = [
         {

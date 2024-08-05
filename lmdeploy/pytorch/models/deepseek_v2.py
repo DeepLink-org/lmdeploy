@@ -336,7 +336,6 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
         max_q_seq_length = context.max_q_seq_length
         max_kv_seq_length = context.max_kv_seq_length
         num_heads = self.num_heads // world_size
-        num_kv_heads = self.num_key_value_heads // world_size
         q_len = hidden_states.size(1)
 
         def __q_proj(hidden_states, nope_size: int, pe_size: int):
@@ -404,10 +403,10 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             import pdb; pdb.set_trace()
             out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
                                                       k_pe,
-                                                      position_ids,
                                                       context.position_ids_1d,
-                                                      self.q_head_dim,
+                                                      q_pe.shape[-1],
                                                       context=context)
+            import pdb; pdb.set_trace()
             return out_q_pe, out_k_pe
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(
@@ -416,6 +415,7 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
         __rotary_emb_fn(q_pe, k_pe, query_states[..., nope_size:],
                         key_states[..., nope_size:])
 
+        import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
             value_states[..., :0],
@@ -428,10 +428,12 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             block_offsets=block_offsets,
             context=context,
         )
+        import pdb; pdb.set_trace()
 
         attn_output = query_states[..., :nope_size]
         block_size = past_key_value[0].size(1)
         shared_kv = block_size >= 64
+        import pdb; pdb.set_trace()
         paged_attention_fwd(
             query_states,
             key_states,

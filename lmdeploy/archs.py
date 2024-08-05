@@ -150,7 +150,7 @@ def get_task(model_path: str):
     if check_vl_llm(config):
         from lmdeploy.serve.vl_async_engine import VLAsyncEngine
         return 'vlm', VLAsyncEngine
-
+    # import pdb; pdb.set_trace()
     # default task, pipeline_class
     return 'llm', AsyncEngine
 

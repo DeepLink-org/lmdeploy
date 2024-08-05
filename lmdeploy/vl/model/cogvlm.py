@@ -78,6 +78,7 @@ class CogVLMVisionModel(VisonModel):
         outputs = [self.image_transform(x) for x in outputs]
         outputs = torch.stack(outputs, dim=0).to(device='cuda:0',
                                                  dtype=torch.half)
+        # import pdb; pdb.set_trace()
         outputs = self.model(outputs)
         outputs = torch.split(outputs, 1, dim=0)
         outputs = [x.squeeze() for x in outputs]

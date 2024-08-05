@@ -105,6 +105,7 @@ class ImageEncoder:
     def forward(self, inputs: List[Image]):
         """Model forward."""
         time_start = time.perf_counter()
+        # import pdb; pdb.set_trace()
         outputs = self.model.forward(inputs)
         if isinstance(outputs[0], torch.Tensor):
             outputs = [x.cpu() for x in outputs]
@@ -120,7 +121,6 @@ class ImageEncoder:
 
     async def async_infer(self, inputs: List[Image]):
         """async infer."""
-        # import pdb; pdb.set_trace()
         outputs = asyncio.Queue()
         item = (inputs, outputs)
         self.req_que.put_nowait(item)

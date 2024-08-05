@@ -389,4 +389,34 @@ MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionMuxi',
 })
 
+
+# muxi qwen2
+MODULE_MAP.update({
+    'transformers.models.qwen2.modeling_qwen2.Qwen2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+    'transformers.models.qwen2.modeling_qwen2.Qwen2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+    'transformers.models.qwen2.modeling_qwen2.Qwen2SdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeFlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
+
+    'transformers.models.qwen2.modeling_qwen2.Qwen2Model':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeModel':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeModelMuxi',
+
+    'transformers.models.qwen2.modeling_qwen2.Qwen2MLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeMLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMuxi',
+
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlockMuxi':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeSparseMoeBlockMuxi',
+})
+
 DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP, muxi=MUXI_MODULE_MAP)

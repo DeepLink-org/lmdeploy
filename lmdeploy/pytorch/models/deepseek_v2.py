@@ -401,14 +401,12 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
                 new_sin = new_sin[..., :new_sin.shape[-1] // 2]
                 cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
                 context.cos_sin_cache = cos_sin_cache
-
+            import pdb; pdb.set_trace()
             out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
                                                       k_pe,
                                                       position_ids,
                                                       context.position_ids_1d,
-                                                      num_heads,
-                                                      num_kv_heads,
-                                                      self.head_dim,
+                                                      self.q_head_dim,
                                                       context=context)
             return out_q_pe, out_k_pe
 

@@ -228,8 +228,6 @@ class PatchedMixtralAttentionMuxi(nn.Module):
                     query_states,
                     key_states,
                     context.position_ids_1d,
-                    num_heads,
-                    num_kv_heads,
                     self.head_dim,
                     context)
             return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states

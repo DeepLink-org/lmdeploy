@@ -281,8 +281,6 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                 query_states,
                 key_states,
                 _position_ids_1d,
-                num_heads,
-                num_kv_heads,
                 self.head_dim,
                 context=context,
             )

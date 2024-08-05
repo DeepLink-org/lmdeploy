@@ -580,3 +580,68 @@ class LlamaModel(nn.Module):
             past_key_values,
             inputs_embeds,
         )
+
+
+class LlamaModelQwen(nn.Module):
+
+    def _continuous_batching_forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        """Rewrite implementation of LlamaModel.forward."""
+        output_attentions = False
+        use_cache = True
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        # Attention mask is not necessary in continuous batching
+        attention_mask = None
+
+        hidden_states = inputs_embeds
+
+        for idx, decoder_layer in enumerate(self.layers):
+
+            past_key_value = past_key_values[idx]
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+            )
+            hidden_states = layer_outputs[0]
+
+        hidden_states = self.norm(hidden_states)
+
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values,
+            hidden_states=None,
+            attentions=None,
+        )
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs,
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        """Rewrite of LlamaModel.forward."""
+        return self._continuous_batching_forward(
+            input_ids,
+            position_ids,
+            past_key_values,
+            inputs_embeds,
+        )

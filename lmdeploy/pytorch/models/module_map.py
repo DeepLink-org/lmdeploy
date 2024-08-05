@@ -406,7 +406,7 @@ MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionMuxi',
 
     'transformers.models.qwen2.modeling_qwen2.Qwen2Model':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModelQwen',
     'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeModel':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeModelMuxi',
 

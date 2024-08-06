@@ -12,7 +12,7 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     """Applies Rotary Position Embedding to the query and key tensors."""
     # import pdb; pdb.set_trace()
     cos = cos.unsqueeze(unsqueeze_dim)

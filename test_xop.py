@@ -17,7 +17,6 @@ if __name__ == "__main__":
 
     import pdb; pdb.set_trace()
 
-
     # Equivalent pytorch code memory_efficient_attention:
     scale = 1 / query.shape[-1] ** 0.5
     query = query * scale

@@ -425,7 +425,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         context_layer = query_states
         # import pdb; pdb.set_trace()
-        window_size = 2
+        # window_size = 2
         paged_attention_fwd(
             query_states,
             key_states,

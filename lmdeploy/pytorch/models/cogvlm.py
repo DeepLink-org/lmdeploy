@@ -374,14 +374,14 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             if not hasattr(context, 'cos_sin_cache'):
                 pos_freq = position_ids_t / scaling_factor * inv_freq
 
-                # cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-                # sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
 
-                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                # cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                # sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
 
-                # context.cos = cos
-                # context.sin = sin
+                context.cos = cos
+                context.sin = sin
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
             # import pdb; pdb.set_trace()
@@ -398,10 +398,10 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        # query_states = query_states.reshape(-1, num_heads, head_dim)
-        # key_states = key_states.reshape(-1, num_kv_heads, head_dim)
-        query_states = query_states.reshape(-1, num_heads * head_dim)
-        key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        query_states = query_states.reshape(-1, num_heads, head_dim)
+        key_states = key_states.reshape(-1, num_kv_heads, head_dim)
+        # query_states = query_states.reshape(-1, num_heads * head_dim)
+        # key_states = key_states.reshape(-1, num_kv_heads * head_dim)
         value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
         import pdb; pdb.set_trace()

@@ -31,10 +31,10 @@ def fused_rotary_emb(
     context=None,
 ):
 
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, context.cos, context.sin, position_ids)
 
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     # ops.rotary_embedding(position_ids,
     #                     query_states,
     #                     key_states,

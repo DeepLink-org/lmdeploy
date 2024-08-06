@@ -385,7 +385,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
             # import pdb; pdb.set_trace()
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             query_states, key_states = fused_rotary_emb(
                 query_states[None],
                 key_states[None],
@@ -393,7 +393,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 head_dim,
                 context=context,
             )
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
@@ -404,12 +404,12 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         # key_states = key_states.reshape(-1, num_kv_heads * head_dim)
         value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
 
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
             value_states,
@@ -424,7 +424,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         )
 
         context_layer = query_states
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         window_size = 2
         paged_attention_fwd(
             query_states,

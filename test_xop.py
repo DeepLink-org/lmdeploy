@@ -1,5 +1,5 @@
 import torch
-# import xformers.ops as xops
+import xformers.ops as xops
 
 from torch.nn import functional as F
 

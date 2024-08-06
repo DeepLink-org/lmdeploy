@@ -7,7 +7,7 @@ if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
     pipe = lmdeploy.pipeline("/data/models/DeepSeek-V2-Lite-Chat",
-                            backend_config = PytorchEngineConfig(tp=8,
+                            backend_config = PytorchEngineConfig(tp=4,
                                                                  block_size=16,
                                                                  device_type='muxi',
                                                                  cache_max_entry_count=0.4))

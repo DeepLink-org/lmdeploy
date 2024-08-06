@@ -411,6 +411,7 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(
             hidden_states)
+        import pdb; pdb.set_trace()
         nope_size = self.kv_lora_rank
         __rotary_emb_fn(q_pe, k_pe, query_states[..., nope_size:],
                         key_states[..., nope_size:])
@@ -418,9 +419,9 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
         import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
-            value_states[..., :0],
+            key_states,
             past_key_value[0],
-            past_key_value[0][..., :0],
+            past_key_value[0],
             q_start_loc,
             q_seq_length,
             kv_seq_length=kv_seq_length,
@@ -442,10 +443,10 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             past_key_value[0][..., :nope_size].squeeze(1),
             attn_output,
             block_offsets,
-            q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
-            max_seqlen=max_q_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
             window_size=None,
             context=context,
         )

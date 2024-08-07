@@ -108,7 +108,7 @@ class ImageEncoder:
     def forward(self, inputs: List[Image]):
         """Model forward."""
         time_start = time.perf_counter()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         global record_count
         record_count = record_count + 1
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:

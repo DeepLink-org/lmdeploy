@@ -11,6 +11,7 @@ if __name__ == '__main__':
     torch.manual_seed(10)
     random.seed(10)
     pipe = pipeline('/data/models/cogvlm-chat', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
+    # pipe = pipeline('/data/models/cogvlm-chat', backend_config = PytorchEngineConfig(tp=1, device_type='cuda', block_size=16, cache_max_entry_count=0.1))
 
     #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
     #response = pipe(('describe this image', image))

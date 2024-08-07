@@ -322,6 +322,8 @@ def patch(
         device_map = DEVICE_SPECIAL_MODULE_MAP.get(device_type, dict())
         module_map.update(device_map)
 
+    
+    # import pdb; pdb.set_trace()
     model = _patch(model, _patch_context, module_map=module_map)
 
     # import pdb; pdb.set_trace()
@@ -334,5 +336,4 @@ def patch(
                                      extra_args=extra_args)
     model.patched_forward = patched_forward
         
-    # import pdb; pdb.set_trace()
     return model

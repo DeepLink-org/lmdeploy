@@ -7,7 +7,7 @@ if __name__ == "__main__":
     seq_len = 47
     seq_len = 1021
     # seq_len = 1235
-    position_ids = torch.range(0, seq_len - 1, dtype=torch.int64).reshape(seq_len, 1).cuda()
+    position_ids = torch.arange(0, seq_len, dtype=torch.int64).reshape(seq_len, 1).cuda()
     query_states = torch.randn(1, seq_len, 4096, dtype=torch.bfloat16).cuda()
     key_states = torch.randn(1, seq_len, 4096, dtype=torch.bfloat16).cuda()
     cos_sin_cache = torch.randn(1, seq_len, 128, dtype=torch.bfloat16).cuda()
@@ -21,7 +21,7 @@ if __name__ == "__main__":
                         cos_sin_cache,
                         True)
 
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
 
     print(query_states.shape, flush=True)
     print("Run done.", flush=True)

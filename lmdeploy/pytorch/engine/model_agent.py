@@ -756,10 +756,7 @@ class BaseModelAgent(AutoModelAgent):
             swap_in_map (SwapMap): Cache maps to swap in.
             swap_out_map (SwapMap): Cache maps to swap out.
         """
-        global record_count
-        record_count = record_count + 1
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
-        # if True:
+        if True:
             with record_function("model_forward"):
                 output = self._forward_impl(inputs,
                                             swap_in_map=swap_in_map,
@@ -769,7 +766,6 @@ class BaseModelAgent(AutoModelAgent):
             with record_function("run_in_executor"):
                 await asyncio.get_event_loop().run_in_executor(None,
                                                                self.stream.synchronize)
-        prof.export_chrome_trace(f"/home/SAIL/zhousl/lm_llama3_8b/lm_llama3_8b_forward_{record_count}.json")
         return output
 
 

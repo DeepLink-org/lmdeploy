@@ -138,7 +138,8 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
                   kv_seq_length: Tensor, max_q_seq_length: int,
                   block_offsets: Tensor):
     """fill key/value state to cache for paged attention."""
-
+    block_num, head_num, t1, block_size, t2 = k_caches.shape
+    k_caches = k_caches.reshape(block_num, block_size, head_num, t1 * t2)
     block_offsets = block_offsets.contiguous()
     batch_size = block_offsets.size(0)
     block_size, num_heads, head_dim = k_caches.size()[1:]

@@ -711,6 +711,10 @@ def paged_attention_fwd(
         max_seqlen (int): The max input length.
         BLOCK (int): The kernel block size.
     """
+    block_num, head_num, t1, block_size, t2 = k.shape
+    k = k.reshape(block_num, block_size, head_num, t1 * t2)
+    block_num, head_num, block_size, head_size = v.shape
+    v = v.reshape(block_num, block_size, head_num, head_size)
     global _convert_pv
     if _convert_pv is None:
         nv_cap = torch.cuda.get_device_capability()

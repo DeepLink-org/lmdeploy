@@ -417,7 +417,7 @@ def main():
                     tp=args.tp,
                     thread_safe=True,
                     block_size=16,
-                    device_type='muxi',
+                    device_type='cuda',
                     enable_prefix_caching=args.enable_prefix_caching,
                 )
             gen_config = EngineGenerationConfig(

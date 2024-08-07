@@ -394,3 +394,13 @@ ASCEND_MODULE_MAP.update({
     'transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralSparseMoeBlockAscend',  # noqa: E501
 })
+
+# ascend qwen1.5
+ASCEND_MODULE_MAP.update({
+    'transformers.models.qwen2.modeling_qwen2.Qwen2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+    'transformers.models.qwen2.modeling_qwen2.Qwen2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+    'transformers.models.qwen2.modeling_qwen2.Qwen2SdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+})

@@ -497,11 +497,11 @@ def model_forward(
             kv_caches=cache_engine.gpu_cache,
             cache_config=cache_engine.cache_config,
         )
-        global record_count
-        record_count = record_count + 1
+        # global record_count
+        # record_count = record_count + 1
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         if True:
-            with record_function("model_forward1"):
+            with record_function("patched_forward"):
                 # import pdb; pdb.set_trace()
                 output = patched_model.patched_forward(
                     input_ids=inputs.input_ids,
@@ -766,9 +766,9 @@ class BaseModelAgent(AutoModelAgent):
         """
         global record_count
         record_count = record_count + 1
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        if True:
-            with record_function("model_forward"):
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        # if True:
+            with record_function("async_forward"):
                 output = self._forward_impl(inputs,
                                             swap_in_map=swap_in_map,
                                             swap_out_map=swap_out_map)
@@ -777,7 +777,7 @@ class BaseModelAgent(AutoModelAgent):
             with record_function("run_in_executor"):
                 await asyncio.get_event_loop().run_in_executor(None,
                                                                self.stream.synchronize)
-        # prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
+        prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
         return output
 
 

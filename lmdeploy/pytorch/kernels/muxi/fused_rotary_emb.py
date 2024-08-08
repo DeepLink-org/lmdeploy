@@ -22,7 +22,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     return q_embed, k_embed
 
 
-@record_function("model_forward")
+# @record_function("model_forward")
 def fused_rotary_emb(
     query_states: Tensor,
     key_states: Tensor,

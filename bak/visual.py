@@ -42,8 +42,8 @@ class PatchEmbedding(nn.Module):
 
 class LlamaRMSNorm(nn.LayerNorm):
     """Rewrite RMSNorm."""
-    def __init__(self, normalized_shape: int | F.List[int] | torch.Size, eps: float = 0.00001, elementwise_affine: bool = True, device=None, dtype=None) -> None:
-        super().__init__(normalized_shape, eps, elementwise_affine, device, dtype)
+    def __init__(*args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
     def forward(self, hidden_states, residual: torch.Tensor = None):
         """forward."""

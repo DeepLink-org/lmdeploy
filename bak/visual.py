@@ -153,13 +153,13 @@ class GLU(nn.Module):
         self.dense_4h_to_h = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
 
     def forward(self, x):
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x = self.linear_proj(x)
         x = self.act1(self.norm1(x))
         # x = self.act2(self.gate_proj(x)) * self.dense_h_to_4h(x)
         # x = self.dense_4h_to_h(x)
 
-        weight = torch.cat((self.gate_proj.weight, self.dense_h_to_4h.weight), dim=-1)
+        weight = torch.cat((self.gate_proj.weight.t(), self.dense_h_to_4h.weight.t()), dim=-1)
         t = torch.matmul(x, weight)
         d = t.shape[-1] // 2
         output_shape = (t.shape[:-1] + (d, ))

@@ -42,7 +42,7 @@ class PatchEmbedding(nn.Module):
 
 class LlamaRMSNorm(nn.LayerNorm):
     """Rewrite RMSNorm."""
-    def __init__(*args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
     def forward(self, hidden_states, residual: torch.Tensor = None):

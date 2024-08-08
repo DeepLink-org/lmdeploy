@@ -500,7 +500,7 @@ def model_forward(
         # global record_count
         # record_count = record_count + 1
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
-        # if True:
+        if True:
             with record_function("patched_forward_triton"):
                 output = patched_model.patched_forward(
                     input_ids=inputs.input_ids,

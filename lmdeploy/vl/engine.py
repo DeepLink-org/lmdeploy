@@ -16,7 +16,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 
 logger = get_logger('lmdeploy')
 
-record_count = -1
+# record_count = -1
 
 
 class Record:
@@ -113,8 +113,8 @@ class ImageEncoder:
         # record_count = record_count + 1
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         if True:
-            with record_function("model_forward_vit_triton"):
-                outputs = self.model.forward(inputs)
+            # with record_function("model_forward_vit_triton"):
+            outputs = self.model.forward(inputs)
         # prof.export_chrome_trace(f"/home/costest/zhousl/triton_vit/cogvlm_forward_{record_count}.json")
         if isinstance(outputs[0], torch.Tensor):
             outputs = [x.cpu() for x in outputs]

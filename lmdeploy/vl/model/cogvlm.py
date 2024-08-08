@@ -9,6 +9,10 @@ from transformers import AutoConfig, AutoModelForCausalLM
 from lmdeploy.vl.model.base import VisonModel
 from lmdeploy.vl.model.utils import disable_logging
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
+record_count = -1
+
 
 class CogVLMVisionModel(VisonModel):
     """CogVLM vision model."""
@@ -78,7 +82,14 @@ class CogVLMVisionModel(VisonModel):
         outputs = [self.image_transform(x) for x in outputs]
         outputs = torch.stack(outputs, dim=0).to(device='cuda:0',
                                                  dtype=torch.half)
-        outputs = self.model(outputs)
+        # import pdb; pdb.set_trace()
+        global record_count
+        record_count = record_count + 1
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        # if True:
+            with record_function("model_forward_vit"):
+                outputs = self.model(outputs)
+        prof.export_chrome_trace(f"/home/costest/zhousl/triton_vit/cogvlm_forward_{record_count}.json")
         outputs = torch.split(outputs, 1, dim=0)
         outputs = [x.squeeze() for x in outputs]
         return outputs

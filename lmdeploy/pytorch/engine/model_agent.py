@@ -514,7 +514,8 @@ def model_forward(
                     use_origin=False,
                     context=context,
                 )
-        # prof.export_chrome_trace(f"/home/SAIL/zhousl/lm_internlm2_chat_7b/lm_llama3_8b_forward_{record_count}.json")
+        # prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
+
     return dict(logits=output['logits'], custom_outputs=context._outputs)
 
 
@@ -764,10 +765,10 @@ class BaseModelAgent(AutoModelAgent):
             swap_in_map (SwapMap): Cache maps to swap in.
             swap_out_map (SwapMap): Cache maps to swap out.
         """
-        global record_count
-        record_count = record_count + 1
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
-        # if True:
+        # global record_count
+        # record_count = record_count + 1
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        if True:
             with record_function("async_forward"):
                 output = self._forward_impl(inputs,
                                             swap_in_map=swap_in_map,
@@ -777,7 +778,7 @@ class BaseModelAgent(AutoModelAgent):
             with record_function("run_in_executor"):
                 await asyncio.get_event_loop().run_in_executor(None,
                                                                self.stream.synchronize)
-        prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
+        # prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
         return output
 
 

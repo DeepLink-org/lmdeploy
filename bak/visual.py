@@ -6,10 +6,9 @@ from transformers.activations import ACT2FN
 
 from torch import Tensor
 from torch.nn import functional as F
-import vllm._C.ops as opsq
+import vllm._C.ops as ops
 
 def rms_norm(hidden_states: Tensor, normalized_shape, weight: Tensor, eps: float = 1e-6, residual: torch.Tensor = None):
-    import pdb; pdb.set_trace()
     if residual is not None:
         ops.fused_add_rms_norm(
             hidden_states,
@@ -19,7 +18,7 @@ def rms_norm(hidden_states: Tensor, normalized_shape, weight: Tensor, eps: float
         )
         return hidden_states, residual
     else:
-        output = torch.empty_like(normalized_shape)
+        output = torch.empty_like(hidden_states)
         ops.rms_norm(output, hidden_states, weight, eps)
         return output
 
@@ -98,6 +97,7 @@ class MLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
+        import pdb; pdb.set_trace()
         x = self.activation_fn(x)
         x = self.fc2(x)
         return x

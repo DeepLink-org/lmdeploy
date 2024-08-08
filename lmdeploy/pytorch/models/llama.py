@@ -505,6 +505,10 @@ class LlamaMLPMuxi(nn.Module):
         # tmp_w2 = torch.matmul(x, self.trans_wup)
 
         # down_proj = torch.matmul(tmp_act * tmp_w2, self.trans_wdown)
+
+        # down_proj = self.down_proj(
+        #         self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
         t = torch.matmul(x, self.trans_wgate_up)
         d = t.shape[-1] // 2
         output_shape = (t.shape[:-1] + (d, ))

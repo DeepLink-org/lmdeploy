@@ -106,8 +106,9 @@ class MLP(nn.Module):
         x = torch.cat((x, self.fc2.weight), dim=-1)
         d = x.shape[-1] // 2
         output_shape = (x.shape[:-1] + (d, ))
-        x = torch.empty(output_shape, dtype=x.dtype, device=x.device)
-        return x
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        ops.silu_and_mul(out, x)
+        return out
 
 
 class TransformerLayer(nn.Module):

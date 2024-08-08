@@ -71,15 +71,29 @@ class Attention(nn.Module):
         qkv = qkv.reshape(B, L, 3, self.num_heads, -1).permute(2, 0, 1, 3, 4)  # 3, B, L, H, D
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         # q = q * self.scale
         # attn = q @ k.transpose(-2, -1)
         # attn = attn.softmax(-1)
         # attn = F.dropout(attn, 0.0)
         # out = attn @ v
+        seq_len_q = q.shape[1]
+        seq_len_k = k.shape[1]
+        q = q.flatten(0, 1)
+        k = k.flatten(0, 1)
+        v = v.flatten(0, 1)
+        cu_seqlens_q = torch.tensor([0, seq_len_q], dtype=torch.int32, device=q.device)
+        cu_seqlens_k = torch.tensor([0, seq_len_k], dtype=torch.int32, device=q.device)
         win_size = (-1, -1)
-        out = flash_attn_varlen_func(q, k, v, softmax_scale=self.scale, window_size=win_size)
-
+        out = flash_attn_varlen_func(q, 
+                                     k, 
+                                     v,
+                                     cu_seqlens_q=cu_seqlens_q,
+                                     cu_seqlens_k=cu_seqlens_k,
+                                     max_seqlen_q=seq_len_q,
+                                     max_seqlen_k=seq_len_k,
+                                     softmax_scale=self.scale, 
+                                     window_size=win_size)
         # import pdb; pdb.set_trace()
         output = self.dense(out.view(B, L, -1))
         output = self.output_dropout(output)

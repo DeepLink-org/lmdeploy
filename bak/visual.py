@@ -4,7 +4,25 @@ from argparse import Namespace
 import xformers.ops as xops
 from transformers.activations import ACT2FN
 
+from torch import Tensor
 from torch.nn import functional as F
+import vllm._C.ops as opsq
+
+def rms_norm(hidden_states: Tensor, normalized_shape, weight: Tensor, eps: float = 1e-6, residual: torch.Tensor = None):
+    import pdb; pdb.set_trace()
+    if residual is not None:
+        ops.fused_add_rms_norm(
+            hidden_states,
+            residual,
+            weight,
+            eps,
+        )
+        return hidden_states, residual
+    else:
+        output = torch.empty_like(normalized_shape)
+        ops.rms_norm(output, hidden_states, weight, eps)
+        return output
+
 
 class PatchEmbedding(nn.Module):
     def __init__(self, config):
@@ -22,6 +40,19 @@ class PatchEmbedding(nn.Module):
         return x
 
 
+class LlamaRMSNorm(nn.LayerNorm):
+    """Rewrite RMSNorm."""
+    def __init__(self, normalized_shape: int | F.List[int] | torch.Size, eps: float = 0.00001, elementwise_affine: bool = True, device=None, dtype=None) -> None:
+        super().__init__(normalized_shape, eps, elementwise_affine, device, dtype)
+
+    def forward(self, hidden_states, residual: torch.Tensor = None):
+        """forward."""
+        # torch.nn.functional.normalize based implementation might leads
+        # to wrong output
+        ret = rms_norm(hidden_states, self.normalized_shape, self.weight, self.eps, residual)
+        return ret
+
+
 class Attention(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -33,23 +64,18 @@ class Attention(nn.Module):
         self.output_dropout = torch.nn.Dropout(config.dropout_prob)
 
     def forward(self, x: "tensor(B, L, D)") -> "tensor(B, L, D)":
-        #import pdb; pdb.set_trace()
         B, L, _ = x.shape
         qkv = self.query_key_value(x)
-        # import pdb; pdb.set_trace()
         qkv = qkv.reshape(B, L, 3, self.num_heads, -1).permute(2, 0, 1, 3, 4)  # 3, B, L, H, D
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         # import pdb; pdb.set_trace()
-        
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
         attn = attn.softmax(-1)
         attn = F.dropout(attn, 0.0)
         out = attn @ v
-        # out = xops.memory_efficient_attention(
-        #    q, k, v, scale=self.scale,
-        #)
+
         # import pdb; pdb.set_trace()
         output = self.dense(out.view(B, L, -1))
         output = self.output_dropout(output)
@@ -80,10 +106,10 @@ class MLP(nn.Module):
 class TransformerLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.attention = Attention(config)
         self.mlp = MLP(config)
-        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
         attention_input = hidden_states
@@ -110,7 +136,7 @@ class GLU(nn.Module):
     def __init__(self, config, in_features):
         super().__init__()
         self.linear_proj = nn.Linear(in_features, config.hidden_size, bias=False)
-        self.norm1 = nn.LayerNorm(config.hidden_size)
+        self.norm1 = LlamaRMSNorm(config.hidden_size)
         self.act1 = nn.GELU()
         self.act2 = nn.functional.silu
         self.dense_h_to_4h = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)

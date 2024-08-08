@@ -65,33 +65,32 @@ class Attention(nn.Module):
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.output_dropout = torch.nn.Dropout(config.dropout_prob)
 
-    def forward(self, x: "tensor(B, L, D)") -> "tensor(B, L, D)":
+    def forward(self, x: "tensor(B, L, D)", cu_seqlens_q) -> "tensor(B, L, D)":
         B, L, _ = x.shape
         qkv = self.query_key_value(x)
         qkv = qkv.reshape(B, L, 3, self.num_heads, -1).permute(2, 0, 1, 3, 4)  # 3, B, L, H, D
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # q = q * self.scale
         # attn = q @ k.transpose(-2, -1)
         # attn = attn.softmax(-1)
         # attn = F.dropout(attn, 0.0)
         # out = attn @ v
-        seq_len_q = q.shape[1]
-        seq_len_k = k.shape[1]
-        q = q.flatten(0, 1)
-        k = k.flatten(0, 1)
-        v = v.flatten(0, 1)
-        cu_seqlens_q = torch.tensor([0, seq_len_q], dtype=torch.int32, device=q.device)
-        cu_seqlens_k = torch.tensor([0, seq_len_k], dtype=torch.int32, device=q.device)
+        _, seq_len_q, H, D = q.shape
+        # q = q.flatten(0, 1)
+        # k = k.flatten(0, 1)
+        # v = v.flatten(0, 1)
+        # cu_seqlens_q = torch.tensor([0, seq_len_q], dtype=torch.int32, device=q.device)
+        # cu_seqlens_k = torch.tensor([0, seq_len_k], dtype=torch.int32, device=q.device)
         win_size = (-1, -1)
-        out = flash_attn_varlen_func(q, 
-                                     k, 
-                                     v,
+        out = flash_attn_varlen_func(q.view(-1, H, D), 
+                                     k.view(-1, H, D), 
+                                     v.view(-1, H, D),
                                      cu_seqlens_q=cu_seqlens_q,
-                                     cu_seqlens_k=cu_seqlens_k,
+                                     cu_seqlens_k=cu_seqlens_q,
                                      max_seqlen_q=seq_len_q,
-                                     max_seqlen_k=seq_len_k,
+                                     max_seqlen_k=seq_len_q,
                                      softmax_scale=self.scale, 
                                      window_size=win_size)
         # import pdb; pdb.set_trace()
@@ -139,9 +138,9 @@ class TransformerLayer(nn.Module):
         self.mlp = MLP(config)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, cu_seqlens_q):
         attention_input = hidden_states
-        attention_output = self.input_layernorm(self.attention(attention_input))
+        attention_output = self.input_layernorm(self.attention(attention_input, cu_seqlens_q))
         hidden_states = attention_input + attention_output
         mlp_input = hidden_states
         mlp_output = self.post_attention_layernorm(self.mlp(mlp_input))
@@ -155,8 +154,10 @@ class Transformer(nn.Module):
         self.layers = nn.ModuleList([TransformerLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(self, hidden_states):
+        seq_len = hidden_states.shape[1]
+        cu_seqlens_q = torch.tensor([0, seq_len], dtype=torch.int32, device=q.device)
         for layer_module in self.layers:
-            hidden_states = layer_module(hidden_states)
+            hidden_states = layer_module(hidden_states, cu_seqlens_q)
         return hidden_states
 
 

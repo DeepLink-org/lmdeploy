@@ -94,12 +94,19 @@ class MLP(nn.Module):
         self.activation_fn = ACT2FN[config.hidden_act]
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+        
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # import pdb; pdb.set_trace()
+        # x = self.fc1(x)
+        # x = self.activation_fn(x)
+        # x = self.fc2(x)
+
         x = self.fc1(x)
-        import pdb; pdb.set_trace()
-        x = self.activation_fn(x)
-        x = self.fc2(x)
+        x = torch.cat((x, self.fc2.weight), dim=-1)
+        d = x.shape[-1] // 2
+        output_shape = (x.shape[:-1] + (d, ))
+        x = torch.empty(output_shape, dtype=x.dtype, device=x.device)
         return x
 
 
@@ -144,6 +151,7 @@ class GLU(nn.Module):
         self.dense_4h_to_h = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
 
     def forward(self, x):
+        import pdb; pdb.set_trace()
         x = self.linear_proj(x)
         x = self.act1(self.norm1(x))
         x = self.act2(self.gate_proj(x)) * self.dense_h_to_4h(x)

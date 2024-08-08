@@ -6,7 +6,10 @@ from transformers.activations import ACT2FN
 
 from torch import Tensor
 from torch.nn import functional as F
+
 import vllm._C.ops as ops
+from flash_attn import flash_attn_varlen_func
+
 
 def rms_norm(hidden_states: Tensor, normalized_shape, weight: Tensor, eps: float = 1e-6, residual: torch.Tensor = None):
     if residual is not None:
@@ -69,11 +72,13 @@ class Attention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         # import pdb; pdb.set_trace()
-        q = q * self.scale
-        attn = q @ k.transpose(-2, -1)
-        attn = attn.softmax(-1)
-        attn = F.dropout(attn, 0.0)
-        out = attn @ v
+        # q = q * self.scale
+        # attn = q @ k.transpose(-2, -1)
+        # attn = attn.softmax(-1)
+        # attn = F.dropout(attn, 0.0)
+        # out = attn @ v
+        win_size = (-1, -1)
+        out = flash_attn_varlen_func(q, k, v, softmax_scale=self.scale, window_size=win_size)
 
         # import pdb; pdb.set_trace()
         output = self.dense(out.view(B, L, -1))

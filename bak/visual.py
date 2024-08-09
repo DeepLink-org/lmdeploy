@@ -155,7 +155,7 @@ class Transformer(nn.Module):
 
     def forward(self, hidden_states):
         seq_len = hidden_states.shape[1]
-        cu_seqlens_q = torch.tensor([0, seq_len], dtype=torch.int32, device=q.device)
+        cu_seqlens_q = torch.tensor([0, seq_len], dtype=torch.int32, device=hidden_states.device)
         for layer_module in self.layers:
             hidden_states = layer_module(hidden_states, cu_seqlens_q)
         return hidden_states
@@ -178,7 +178,6 @@ class GLU(nn.Module):
         x = self.act1(self.norm1(x))
         # x = self.act2(self.gate_proj(x)) * self.dense_h_to_4h(x)
         # x = self.dense_4h_to_h(x)
-
         weight = torch.cat((self.gate_proj.weight.t(), self.dense_h_to_4h.weight.t()), dim=-1)
         t = torch.matmul(x, weight)
         d = t.shape[-1] // 2

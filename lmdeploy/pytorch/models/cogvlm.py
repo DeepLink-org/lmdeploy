@@ -384,18 +384,21 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                     context.cos = cos
                     context.sin = sin
 
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             # print(f"is_decoding: {query_states.shape[-3] == q_seq_length.size(0)}.", flush=True)
             if is_decoding:
+                # import pdb; pdb.set_trace()
                 query_states, key_states = fused_rotary_emb_op(
-                    query_states[None],
-                    key_states[None],
+                    query_states,
+                    key_states,
                     position_ids_t,
                     head_dim,
                     context=context,
                 )
+                # import pdb; pdb.set_trace()
                 return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
             else:
+                # import pdb; pdb.set_trace()
                 query_states, key_states = fused_rotary_emb_eager(
                     query_states[None],
                     key_states[None],
@@ -408,8 +411,9 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        is_decoding = query_states.shape[-3] == q_seq_length.size(0)
-
+        is_decoding = query_states.shape[1] == 1
+        
+        # import pdb; pdb.set_trace()
         if is_decoding:
             query_states = query_states.reshape(-1, num_heads * head_dim)
             key_states = key_states.reshape(-1, num_kv_heads * head_dim)

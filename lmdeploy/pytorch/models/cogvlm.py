@@ -370,19 +370,18 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
             position_ids_1d = context.position_ids_1d[None]
             position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
+            pos_freq = position_ids_t / scaling_factor * inv_freq
 
-            if not hasattr(context, 'cos_sin_cache'):
-                pos_freq = position_ids_t / scaling_factor * inv_freq
-                if is_decoding:
-                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                    context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
+            if is_decoding and not hasattr(context, 'cos_sin_cache'):
+                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
-                else:
-                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-                    context.cos = cos
-                    context.sin = sin
+            if not is_decoding and not hasattr(context, 'cos_sin_cache'):
+                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                context.cos = cos
+                context.sin = sin
 
             # import pdb; pdb.set_trace()
             # print(f"is_decoding: {query_states.shape[-3] == q_seq_length.size(0)}.", flush=True)

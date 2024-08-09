@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
-from ..kernels import fill_kv_cache, fused_rotary_emb, paged_attention_fwd
+from ..kernels import fill_kv_cache, fused_rotary_emb, fused_rotary_emb_op, fused_rotary_emb_eager, paged_attention_fwd
 from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,
                                         rowwise_parallelize_linear)
 
@@ -371,37 +371,53 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             position_ids_1d = context.position_ids_1d[None]
             position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
 
+            is_decoding = query_states.shape[-3] == q_seq_length.size(0)
+
             if not hasattr(context, 'cos_sin_cache'):
                 pos_freq = position_ids_t / scaling_factor * inv_freq
+                if is_decoding:
+                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                    context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
-                cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-
-                # cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                # sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-
-                context.cos = cos
-                context.sin = sin
-                context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
+                else:
+                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                    context.cos = cos
+                    context.sin = sin
 
             # import pdb; pdb.set_trace()
-            # import pdb; pdb.set_trace()
-            query_states, key_states = fused_rotary_emb(
-                query_states[None],
-                key_states[None],
-                position_ids_t,
-                head_dim,
-                context=context,
-            )
+            # print(f"is_decoding: {query_states.shape[-3] == q_seq_length.size(0)}.", flush=True)
+            if is_decoding:
+                query_states, key_states = fused_rotary_emb_op(
+                    query_states[None],
+                    key_states[None],
+                    position_ids_t,
+                    head_dim,
+                    context=context,
+                )
+            else:
+                query_states, key_states = fused_rotary_emb_eager(
+                    query_states[None],
+                    key_states[None],
+                    position_ids_t,
+                    head_dim,
+                    context=context,
+                )
             # import pdb; pdb.set_trace()
             return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        query_states = query_states.reshape(-1, num_heads, head_dim)
-        key_states = key_states.reshape(-1, num_kv_heads, head_dim)
-        # query_states = query_states.reshape(-1, num_heads * head_dim)
-        # key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        is_decoding = query_states.shape[-3] == q_seq_length.size(0)
+
+        if is_decoding:
+            query_states = query_states.reshape(-1, num_heads * head_dim)
+            key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        else:
+            query_states = query_states.reshape(-1, num_heads, head_dim)
+            key_states = key_states.reshape(-1, num_kv_heads, head_dim)
+
         value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
         # import pdb; pdb.set_trace()

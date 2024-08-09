@@ -374,9 +374,10 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             if not hasattr(context, 'cos_sin_cache'):
                 pos_freq = position_ids_t / scaling_factor * inv_freq
                 if is_decoding:
-                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-
+                    # cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                    # sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
+                    cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                    sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
                 else:
                     cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
                     sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
@@ -387,16 +388,26 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             # import pdb; pdb.set_trace()
             # print(f"is_decoding: {query_states.shape[-3] == q_seq_length.size(0)}.", flush=True)
             if is_decoding:
+                # # import pdb; pdb.set_trace()
+                # query_states, key_states = fused_rotary_emb_op(
+                #     query_states,
+                #     key_states,
+                #     position_ids_t,
+                #     head_dim,
+                #     context=context,
+                # )
+                # # import pdb; pdb.set_trace()
+                # return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
                 # import pdb; pdb.set_trace()
-                query_states, key_states = fused_rotary_emb_op(
-                    query_states,
-                    key_states,
+                query_states, key_states = fused_rotary_emb_eager(
+                    query_states[None],
+                    key_states[None],
                     position_ids_t,
                     head_dim,
                     context=context,
                 )
                 # import pdb; pdb.set_trace()
-                return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
+                return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
             else:
                 # import pdb; pdb.set_trace()
                 query_states, key_states = fused_rotary_emb_eager(
@@ -415,8 +426,10 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         
         # import pdb; pdb.set_trace()
         if is_decoding:
-            query_states = query_states.reshape(-1, num_heads * head_dim)
-            key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+            # query_states = query_states.reshape(-1, num_heads * head_dim)
+            # key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+            query_states = query_states.reshape(-1, num_heads, head_dim)
+            key_states = key_states.reshape(-1, num_kv_heads, head_dim)
         else:
             query_states = query_states.reshape(-1, num_heads, head_dim)
             key_states = key_states.reshape(-1, num_kv_heads, head_dim)

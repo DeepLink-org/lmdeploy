@@ -394,6 +394,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                     head_dim,
                     context=context,
                 )
+                return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
             else:
                 query_states, key_states = fused_rotary_emb_eager(
                     query_states[None],
@@ -402,8 +403,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                     head_dim,
                     context=context,
                 )
-            # import pdb; pdb.set_trace()
-            return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
+                # import pdb; pdb.set_trace()
+                return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 

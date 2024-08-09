@@ -28,6 +28,11 @@ logger = get_logger('lmdeploy')
 
 _PATCH_ARG_NAMES = ['context', 'use_origin']
 
+import torch_npu
+from torch.profiler import profile, record_function, ProfilerActivity
+
+record_count = -1
+
 
 def _update_cache_config(model_config: ModelConfig,
                          cache_config: CacheConfig,
@@ -139,21 +144,37 @@ def model_forward(
 ):
     """perform model forward."""
     stream = stream or torch.cuda.current_stream()
-    with torch.cuda.stream(stream):
-        # forward
-        inputs = inputs.to_device('cuda')
-        ctx_mgr = model.ctx_mgr
-        context = ctx_mgr.build_context(
-            inputs=inputs,
-            world_size=world_size,
-            kv_caches=cache_engine.gpu_cache,
-        )
-        with ctx_mgr.context(context):
-            input_dict = model.prepare_inputs_for_generation(
-                past_key_values=cache_engine.gpu_cache,
-                context=context,
+    global record_count
+    record_count = record_count + 1
+    #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+    with torch_npu.profiler.profile(
+        activities=[
+            torch_npu.profiler.ProfilerActivity.CPU,
+            torch_npu.profiler.ProfilerActivity.NPU
+        ],
+        # on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(profiling_path),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=False,
+        with_flops=False,
+        with_modules=False) as prof:
+        with torch.cuda.stream(stream):
+            # forward
+            inputs = inputs.to_device('cuda')
+            ctx_mgr = model.ctx_mgr
+            context = ctx_mgr.build_context(
+                inputs=inputs,
+                world_size=world_size,
+                kv_caches=cache_engine.gpu_cache,
             )
-            output = model(**input_dict)
+            with ctx_mgr.context(context):
+                input_dict = model.prepare_inputs_for_generation(
+                    past_key_values=cache_engine.gpu_cache,
+                    context=context,
+                )
+                with record_function("model_forward"):
+                    output = model(**input_dict)
+    prof.export_chrome_trace(f"/tzy/atb_timeline/llama_forward_{record_count}.json")
     return dict(logits=output)
 
 

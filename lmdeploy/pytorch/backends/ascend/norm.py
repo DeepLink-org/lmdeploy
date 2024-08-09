@@ -21,7 +21,7 @@ class AscendRMSNormImpl(RMSNormImpl, nn.Module):
             x = rms_norm(x, self.weight, self.eps)
             return x
         else:
-            x, residual = rms_norm(x, self.weight, self.eps, residual=residual)
+            x, _, residual = rms_norm(x, self.weight, self.eps, residual=residual)
             return x, residual
 
 

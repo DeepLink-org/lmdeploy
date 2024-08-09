@@ -6,6 +6,7 @@ from lmdeploy.pytorch.model_inputs import StepContextManager
 
 from ..linear import LinearBuilder, LinearImpl
 
+import torch
 
 class DefaultLinearImpl(LinearImpl):
     """Linear implementation api."""
@@ -16,6 +17,8 @@ class DefaultLinearImpl(LinearImpl):
 
     def forward(self, x, all_reduce: bool = False):
         """forward."""
+        # out = torch.ops.atb.linear(x, self.mod.weight, None, False, True)
+        # return out
         out = self.mod(x)
         if all_reduce:
             dist.all_reduce(out)

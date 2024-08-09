@@ -230,6 +230,7 @@ class StepContext:
     attention_mask: torch.LongTensor
     q_seqlens: torch.LongTensor
     kv_seqlens: torch.LongTensor
+
     q_start_loc: torch.LongTensor
     kv_caches: List
     is_decoding: bool

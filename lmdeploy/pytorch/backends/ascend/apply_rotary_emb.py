@@ -15,6 +15,7 @@ class AscendApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
                 key: Tensor,
                 cos: Tensor,
                 sin: Tensor,
+                seqlen: Tensor,
                 inplace: bool = True):
         """forward."""
         if inplace:
@@ -23,7 +24,7 @@ class AscendApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
         else:
             q_embed = torch.empty_like(query)
             k_embed = torch.empty_like(key)
-        return apply_rotary_pos_emb(query, key, cos, sin, q_embed, k_embed)
+        return apply_rotary_pos_emb(query, key, cos, sin, seqlen, q_embed, k_embed)
 
 
 class AscendApplyRotaryEmbBuilder(ApplyRotaryEmbBuilder):

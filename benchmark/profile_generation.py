@@ -19,6 +19,13 @@ from lmdeploy.cli.utils import ArgumentHelper, DefaultsAndTypesHelpFormatter
 from lmdeploy.messages import (EngineGenerationConfig, PytorchEngineConfig,
                                TurbomindEngineConfig)
 
+import infer_ext
+import torch
+import dicp.vendor.AtbGraph.ext_ops
+
+torch._dynamo.assume_static_by_default = False
+torch._dynamo.config.suppress_errors = False
+torch._dynamo.config.cache_size_limit = 3000
 
 def infer(model, session_id: int, input_ids: List,
           gen_config: EngineGenerationConfig, test_round: int, que: Queue):
@@ -416,6 +423,7 @@ def main():
                     tp=args.tp,
                     thread_safe=True,
                     enable_prefix_caching=args.enable_prefix_caching,
+                    device_type="ascend",
                 )
             gen_config = EngineGenerationConfig(
                 top_k=args.top_k,

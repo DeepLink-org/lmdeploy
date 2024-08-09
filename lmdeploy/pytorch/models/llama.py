@@ -16,6 +16,8 @@ from lmdeploy.pytorch.model_inputs import StepContext, StepContextManager
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
+import torch._dynamo as dynamo
+
 
 class LlamaAttention(nn.Module):
     """Rewrite module of LlamaAttention."""
@@ -40,6 +42,9 @@ class LlamaAttention(nn.Module):
             is_tp=is_tp,
         )
         del origin.q_proj, origin.k_proj, origin.v_proj
+        self.qkv_weight = self.qkv_proj.get_parameter('impl.mod.weight').data
+        
+        dynamo.mark_static(self.qkv_weight)
 
         self.apply_rotary_pos_emb = ApplyRotaryEmb()
 
@@ -56,6 +61,8 @@ class LlamaAttention(nn.Module):
             ctx_mgr=ctx_mgr,
             is_tp=is_tp,
         )
+        self.o_weight = self.o_proj.get_parameter('impl.mod.weight').data
+        dynamo.mark_static(self.o_weight)
 
     @staticmethod
     def _load_weights(mod, loader, rank: int, world_size: int,
@@ -82,10 +89,12 @@ class LlamaAttention(nn.Module):
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor],
                Optional[Tuple[torch.Tensor]]]:
         """Rewrite of LlamaAttention.forward."""
-        qkv_states = self.qkv_proj(hidden_states)
-        # (-1, heads, head_dim)
-        qkv_states = qkv_states.flatten(0, -2)
-        qkv_states = qkv_states.unflatten(-1, (-1, self.head_dim))
+        # qkv_states = self.qkv_proj(hidden_states)
+        qkv_states = torch.ops.atb.linear(hidden_states, self.qkv_weight, None, False, True)
+        ## (-1, heads, head_dim)
+        # qkv_states = qkv_states.flatten(0, -2)
+        # qkv_states = qkv_states.unflatten(-1, (-1, self.head_dim))
+        qkv_states = qkv_states.view(-1, self.num_heads + self.num_kv_heads + self.num_kv_heads, self.head_dim)
         query_states, key_states, value_states = qkv_states.split(
             (
                 self.num_heads,
@@ -96,25 +105,31 @@ class LlamaAttention(nn.Module):
         )
 
         cos, sin = rotary_pos_emb
+        # import pdb;pdb.set_trace()
+        # seqlen = query_states.shape[0]
         query_states, key_states = self.apply_rotary_pos_emb(
-            query_states,
-            key_states,
+            query_states.view(-1, self.num_heads * self.head_dim),
+            key_states.view(-1, self.num_kv_heads * self.head_dim),
             cos,
             sin,
+            attn_metadata.kv_seqlens_int,
             inplace=True,
         )
         attn_output = self.attn_fwd(
-            query_states,
-            key_states,
+            query_states.view(-1, self.num_heads, self.head_dim),
+            key_states.view(-1, self.num_kv_heads, self.head_dim),
             value_states,
             past_key_value[0],
             past_key_value[1],
             attn_metadata,
             inplace=True,
         )
-        attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
 
-        attn_output = self.o_proj(attn_output)
+        # attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
+        attn_output = attn_output.view(1, -1, self.num_heads * self.head_dim)
+
+        # attn_output = self.o_proj(attn_output)
+        attn_output = torch.ops.atb.linear(attn_output, self.o_weight, None, False, True)
 
         return attn_output
 
@@ -143,7 +158,12 @@ class LlamaMLP(nn.Module):
         self.down_proj = build_rowwise_linear(origin.down_proj,
                                               ctx_mgr=ctx_mgr,
                                               is_tp=is_tp)
-
+        self.gate_up_weight = self.gate_up_proj.get_parameter('impl.mod.weight').data
+        self.down_weight = self.down_proj.get_parameter('impl.mod.weight').data
+        dynamo.mark_static(self.gate_up_weight)
+        dynamo.mark_static(self.down_weight)
+        
+        
     @staticmethod
     def _load_weights(mod: nn.Module, loader, rank: int, world_size: int,
                       device: torch.device):
@@ -161,9 +181,11 @@ class LlamaMLP(nn.Module):
                                    prefix='down_proj')
 
     def forward(self, x):
-        gate_up = self.gate_up_proj(x)
-        act = self.act_fn(gate_up)
-        return self.down_proj(act)
+        # # import pdb;pdb.set_trace()
+        # gate_up = self.gate_up_proj(x)
+        # act = self.act_fn(gate_up)
+        # return self.down_proj(act)
+        return torch.ops.atb.mlp_gate.default(x, self.gate_up_weight, self.down_weight)
 
 
 class LlamaDecoderLayer(nn.Module):
@@ -257,6 +279,40 @@ class LlamaModel(nn.Module):
             emb_type,
         )
 
+    
+    @torch.compile(backend='atbgraph', dynamic=True)
+    def call_layers(self, hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata):
+        for idx, decoder_layer in enumerate(self.layers):
+            past_key_value = past_key_values[idx]
+            hidden_states, residual = decoder_layer(
+                hidden_states,
+                rotary_pos_emb=rotary_pos_emb,
+                past_key_value=past_key_value,
+                residual=residual,
+                attn_metadata=attn_metadata,
+            )
+            # break
+
+        # past_key_value = past_key_values[0]
+        # hidden_states, residual = self.layers[0](
+        #     hidden_states,
+        #     rotary_pos_emb=rotary_pos_emb,
+        #     past_key_value=past_key_value,
+        #     residual=residual,
+        #     attn_metadata=attn_metadata,
+        # )
+        # past_key_value = past_key_values[1]
+        # hidden_states, residual = self.layers[1](
+        #     hidden_states,
+        #     rotary_pos_emb=rotary_pos_emb,
+        #     past_key_value=past_key_value,
+        #     residual=residual,
+        #     attn_metadata=attn_metadata,
+        # )
+
+        hidden_states, _ = self.norm(hidden_states, residual)
+        return hidden_states  
+
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -274,18 +330,11 @@ class LlamaModel(nn.Module):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
         cos, sin = cos[0], sin[0]
         rotary_pos_emb = (cos, sin)
-        for idx, decoder_layer in enumerate(self.layers):
+        # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 0)
+        # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 1)
+        hidden_states = self.call_layers(hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata)
 
-            past_key_value = past_key_values[idx]
-            hidden_states, residual = decoder_layer(
-                hidden_states,
-                rotary_pos_emb=rotary_pos_emb,
-                past_key_value=past_key_value,
-                residual=residual,
-                attn_metadata=attn_metadata,
-            )
-
-        hidden_states, _ = self.norm(hidden_states, residual)
+        # import pdb;pdb.set_trace()
 
         return hidden_states
 
@@ -299,6 +348,7 @@ class LlamaForCausalLM(nn.Module):
         self.ctx_mgr = ctx_mgr
         self.model = LlamaModel(origin.model, ctx_mgr)
         self.lm_head = build_rowwise_linear(origin.lm_head)
+        self.opt_model = torch.compile(self.model, backend='atbgraph', dynamic=False)
 
     def forward(
         self,
@@ -310,6 +360,7 @@ class LlamaForCausalLM(nn.Module):
         **kwargs,
     ):
         hidden_states = self.model(
+        # hidden_states = self.opt_model(
             input_ids=input_ids,
             position_ids=position_ids,
             past_key_values=past_key_values,

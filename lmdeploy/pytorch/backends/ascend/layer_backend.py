@@ -98,13 +98,18 @@ class AscendLayersBackend(DefaultLayersBackend):
         attn_meta_cls = cls.get_attention_metadata_cls()
         attn_metadata = attn_meta_cls(
             step_context.is_decoding,
-            step_context.block_offsets,
+            step_context.block_offsets.contiguous(),
             q_start_loc=step_context.q_start_loc,
             q_seqlens=step_context.q_seqlens,
             kv_seqlens=step_context.kv_seqlens,
             kv_start_indices=kv_start_indices,
             block_size=block_size,
-            attention_mask=attention_mask
+            attention_mask=attention_mask,
+            q_seqlens_int=step_context.q_seqlens.to(torch.int32),
+            kv_seqlens_int=step_context.kv_seqlens.to(torch.int32),
+            kv_start_indices_1d=kv_start_indices.flatten().to(torch.int32),
+            block_offsets_int=step_context.block_offsets.to(torch.int32).contiguous(),
+            block_offsets_1d_int=step_context.block_offsets.flatten().to(torch.int32).contiguous()
         )
         if not step_context.is_decoding:
             attn_metadata.is_unpaged_prefill = \

@@ -3,7 +3,7 @@ from .alibi_pagedattention import alibi_paged_attention_fwd
 from .apply_rotary_pos_emb import apply_rotary_pos_emb
 from .fill_kv_cache import fill_kv_cache
 from .fused_moe import fused_moe
-from .fused_rotary_emb import fused_rotary_emb
+from .fused_rotary_emb import fused_rotary_emb, fused_rotary_emb_op, fused_rotary_emb_eager
 from .mbgmm import mbgmm_a, mbgmm_b
 from .mbgmv import mbgmv_a, mbgmv_b
 from .multinomial_sampling import multinomial_sampling
@@ -18,6 +18,8 @@ __all__ = [
     'apply_rotary_pos_emb',
     'fused_moe',
     'fused_rotary_emb',
+    'fused_rotary_emb_op',
+    'fused_rotary_emb_eager',
     'paged_attention_fwd',
     'alibi_paged_attention_fwd',
     'fill_kv_cache',

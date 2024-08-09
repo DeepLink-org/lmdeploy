@@ -4,7 +4,7 @@ from .fill_kv_cache import fill_kv_cache
 from .pagedattention import paged_attention_fwd
 from .rms_norm import rms_norm
 from .multinomial_sampling import multinomial_sampling
-from .fused_rotary_emb import fused_rotary_emb
+from .fused_rotary_emb import fused_rotary_emb, fused_rotary_emb_op, fused_rotary_emb_eager
 from .fused_moe import fused_moe
 
 
@@ -15,5 +15,7 @@ __all__ = [
     'paged_attention_fwd',
     'multinomial_sampling',
     'fused_rotary_emb',
+    'fused_rotary_emb_op',
+    'fused_rotary_emb_eager',
     'fused_moe',
 ]

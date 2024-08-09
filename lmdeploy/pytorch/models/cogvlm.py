@@ -363,15 +363,13 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 dim=-1)
             return query_states, key_states, value_states
 
-        def __rotary_emb_fn(query_states, key_states, value_states):
+        def __rotary_emb_fn(query_states, key_states, value_states, is_decoding):
             """rotary embedding func."""
             scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
             inv_freq = self.rotary_emb.inv_freq
 
             position_ids_1d = context.position_ids_1d[None]
             position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
-
-            is_decoding = query_states.shape[-3] == q_seq_length.size(0)
 
             if not hasattr(context, 'cos_sin_cache'):
                 pos_freq = position_ids_t / scaling_factor * inv_freq
@@ -422,7 +420,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         # import pdb; pdb.set_trace()
         query_states, key_states, value_states = __rotary_emb_fn(
-            query_states, key_states, value_states)
+            query_states, key_states, value_states, is_decoding)
 
 
         # import pdb; pdb.set_trace()

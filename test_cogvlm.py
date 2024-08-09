@@ -31,6 +31,13 @@ if __name__ == '__main__':
     # image = load_image("/home/costest/zhousl/tiger.jpeg")
     response = pipe(('describe this image', image), do_preprocess=True)
     # response = pipe(('describe this image'), do_preprocess=True)
+    print(response)
+    raise ValueError("test")
+    response = pipe(('describe this image', image), do_preprocess=True)
+    print(response)
+    response = pipe(('describe this image', image), do_preprocess=True)
+    # response = pipe(('describe this image'), do_preprocess=True)
+    # response = pipe(('describe this image'), do_preprocess=True)
     # response = pipe(prompts, do_preprocess=True)
     # response = pipe(prompts, do_preprocess=False)
     # response = pipe(prompts)
@@ -40,5 +47,4 @@ if __name__ == '__main__':
     #        response = pipe(prompts)
     #prof.export_chrome_trace("internvl.v100.json")
     print(response)
-# if __name__ == '__main__':
-#   main()
+

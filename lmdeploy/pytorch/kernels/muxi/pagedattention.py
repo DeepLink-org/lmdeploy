@@ -43,6 +43,7 @@ def paged_attention_fwd(
         BLOCK (int): The kernel block size.
     """
 
+    # import pdb; pdb.set_trace()
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
     if not is_decoding:
         _, head, dim = key_states.size()

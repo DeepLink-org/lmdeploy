@@ -497,9 +497,9 @@ def model_forward(
             kv_caches=cache_engine.gpu_cache,
             cache_config=cache_engine.cache_config,
         )
-        # global record_count
-        # record_count = record_count + 1
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        #global record_count
+        #record_count = record_count + 1
+        #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         if True:
             with record_function("patched_forward"):
                 # import pdb; pdb.set_trace()
@@ -514,7 +514,7 @@ def model_forward(
                     use_origin=False,
                     context=context,
                 )
-        # prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
+        #prof.export_chrome_trace(f"/home/costest/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
 
     return dict(logits=output['logits'], custom_outputs=context._outputs)
 

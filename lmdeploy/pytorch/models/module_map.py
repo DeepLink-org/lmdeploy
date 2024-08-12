@@ -404,3 +404,15 @@ ASCEND_MODULE_MAP.update({
     'transformers.models.qwen2.modeling_qwen2.Qwen2SdpaAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
 })
+
+# ascend qwen2 moe
+ASCEND_MODULE_MAP.update({
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeFlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSdpaAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2.PatchedQwen2AttentionAscend',
+    'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlock':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeSparseMoeBlockAscend',  # noqa: E501
+})

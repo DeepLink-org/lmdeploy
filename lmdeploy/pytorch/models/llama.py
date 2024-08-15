@@ -17,7 +17,7 @@ from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
 import torch._dynamo as dynamo
-
+import torch_npu
 
 class LlamaAttention(nn.Module):
     """Rewrite module of LlamaAttention."""
@@ -115,6 +115,11 @@ class LlamaAttention(nn.Module):
             attn_metadata.kv_seqlens_int,
             inplace=True,
         )
+        
+        # print('###')
+        # import pdb;pdb.set_trace()
+        # pass
+        
         attn_output = self.attn_fwd(
             query_states.view(-1, self.num_heads, self.head_dim),
             key_states.view(-1, self.num_kv_heads, self.head_dim),
@@ -124,9 +129,16 @@ class LlamaAttention(nn.Module):
             attn_metadata,
             inplace=True,
         )
+    
+        # print('###')
+        # import pdb;pdb.set_trace()
+        # pass
+    
+
 
         # attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
         attn_output = attn_output.view(1, -1, self.num_heads * self.head_dim)
+
 
         # attn_output = self.o_proj(attn_output)
         attn_output = torch.ops.atb.linear(attn_output, self.o_weight, None, False, True)
@@ -236,6 +248,10 @@ class LlamaDecoderLayer(nn.Module):
             past_key_value=past_key_value,
             attn_metadata=attn_metadata,
         )
+        
+        # print('###')
+        # import pdb;pdb.set_trace()
+        # pass
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
@@ -279,6 +295,11 @@ class LlamaModel(nn.Module):
             emb_type,
         )
 
+    def load_tensor(self, name):
+        import pickle
+        with open(f'{name}.pkl', 'rb') as f:
+            out = pickle.load(f)
+        return out.to('npu')
     
     @torch.compile(backend='atbgraph', dynamic=True)
     def call_layers(self, hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata):
@@ -293,25 +314,8 @@ class LlamaModel(nn.Module):
             )
             # break
 
-        # past_key_value = past_key_values[0]
-        # hidden_states, residual = self.layers[0](
-        #     hidden_states,
-        #     rotary_pos_emb=rotary_pos_emb,
-        #     past_key_value=past_key_value,
-        #     residual=residual,
-        #     attn_metadata=attn_metadata,
-        # )
-        # past_key_value = past_key_values[1]
-        # hidden_states, residual = self.layers[1](
-        #     hidden_states,
-        #     rotary_pos_emb=rotary_pos_emb,
-        #     past_key_value=past_key_value,
-        #     residual=residual,
-        #     attn_metadata=attn_metadata,
-        # )
-
         hidden_states, _ = self.norm(hidden_states, residual)
-        return hidden_states  
+        return hidden_states
 
     def forward(
         self,
@@ -330,10 +334,25 @@ class LlamaModel(nn.Module):
         cos, sin = self.rotary_emb(hidden_states, position_ids)
         cos, sin = cos[0], sin[0]
         rotary_pos_emb = (cos, sin)
-        # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 0)
-        # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 1)
-        hidden_states = self.call_layers(hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata)
+        
+        
+        # cos = self.load_tensor('cos')
+        # sin = self.load_tensor('sin')
+        # k_cache = self.load_tensor('k_cache')
+        # v_cache = self.load_tensor('v_cache')
+        # past_key_values[0] = (k_cache, v_cache)
+        
+        # rotary_pos_emb = (cos, sin)
+        # # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 0)
+        # # dynamo.mark_dynamic(attn_metadata.block_offsets_int, 1)
+        # hidden_states = self.load_tensor('hidden_states')
+        # hidden_states = torch_npu.npu_format_cast(hidden_states, 2)
 
+        # import pdb;pdb.set_trace()
+        # pass
+        hidden_states = self.call_layers(hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata)
+        # hidden_states, residual = self.call_layers(hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata)
+        # hidden_states, _ = self.norm(hidden_states, residual)
         # import pdb;pdb.set_trace()
 
         return hidden_states

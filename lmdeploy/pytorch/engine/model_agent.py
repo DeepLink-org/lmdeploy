@@ -147,17 +147,18 @@ def model_forward(
     global record_count
     record_count = record_count + 1
     #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-    with torch_npu.profiler.profile(
-        activities=[
-            torch_npu.profiler.ProfilerActivity.CPU,
-            torch_npu.profiler.ProfilerActivity.NPU
-        ],
-        # on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(profiling_path),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=False,
-        with_flops=False,
-        with_modules=False) as prof:
+    # with torch_npu.profiler.profile(
+    #     activities=[
+    #         torch_npu.profiler.ProfilerActivity.CPU,
+    #         torch_npu.profiler.ProfilerActivity.NPU
+    #     ],
+    #     # on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(profiling_path),
+    #     record_shapes=True,
+    #     profile_memory=True,
+    #     with_stack=False,
+    #     with_flops=False,
+    #     with_modules=False) as prof:
+    if True:
         with torch.cuda.stream(stream):
             # forward
             inputs = inputs.to_device('cuda')
@@ -174,7 +175,7 @@ def model_forward(
                 )
                 with record_function("model_forward"):
                     output = model(**input_dict)
-    prof.export_chrome_trace(f"/tzy/atb_timeline/llama_forward_{record_count}.json")
+    # prof.export_chrome_trace(f"/tzy/atb_timeline/llama_forward_{record_count}.json")
     return dict(logits=output)
 
 

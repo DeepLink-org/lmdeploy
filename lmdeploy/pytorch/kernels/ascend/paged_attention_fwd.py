@@ -2,6 +2,7 @@
 import infer_ext.ops as ext_ops
 import torch
 from torch import Tensor
+from infer_ext.utils.type_annotation import List
 
 
 def flash_context_attention(
@@ -14,6 +15,7 @@ def flash_context_attention(
     block_offsets: Tensor,
     q_start_loc: Tensor,
     q_seq_len: Tensor,
+    q_seq_len_list: List[int],
     kv_seq_len: Tensor,
     block_size: int,
     kv_cache_len: int,
@@ -23,15 +25,16 @@ def flash_context_attention(
     num_kv_heads = value_states.shape[1]
     batch = q_start_loc.shape[0]
 
+    qkv_eq = query_states.shape[0] == key_states.shape[0]
     for i in range(batch):
-        if torch.equal(q_seq_len[i], kv_seq_len[i]):
+        if qkv_eq:
             ext_ops.context_attention(
                 attn_output=attn_output,
                 query=query_states,
                 key=key_states,
                 value=value_states,
                 q_start_loc=q_start_loc[i:i + 1],
-                seq_len=q_seq_len[i:i + 1],
+                seq_len_list=q_seq_len_list[i:i + 1],
                 num_q_heads=num_q_heads,
                 num_kv_heads=num_kv_heads,
                 attn_mask=context.attention_mask[i:i + 1],
@@ -48,7 +51,7 @@ def flash_context_attention(
                 block_offsets,
                 block_size,
                 q_start_loc[i:i + 1],
-                q_seq_len[i:i + 1],
+                q_seq_len_list[i:i + 1],
                 kv_seq_len[i:i + 1],
                 num_q_heads,
                 num_kv_heads,
@@ -82,12 +85,13 @@ def paged_attention_fwd(
     block_offsets: Tensor,
     q_start_loc: Tensor,
     q_seqlens: Tensor,
+    q_seqlens_list: List[int],
     kv_seqlens: Tensor,
     max_seqlen: int,
     window_size: int = 1,
     context=None,
 ):
-    is_decoding = query_states.shape[-3] == q_seqlens.size(0)
+    is_decoding = query_states.shape[-3] == len(q_seqlens_list)
     block_num, block_size, head, dim = key_cache.size()
     kv_cache_len = block_num * block_size
     k = key_cache.reshape(block_num * block_size, head, dim)
@@ -103,6 +107,7 @@ def paged_attention_fwd(
             block_offsets,
             q_start_loc,
             q_seqlens,
+            q_seqlens_list,
             kv_seqlens,
             block_size,
             kv_cache_len,

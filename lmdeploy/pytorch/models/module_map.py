@@ -312,9 +312,9 @@ MODULE_MAP.update({
     'modeling_cogvlm.MLP':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLP',
     'modeling_cogvlm.VisionExpertMLP':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLP',
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLPAscend',
     'modeling_cogvlm.VisionExpertAttention':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttention',
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionAscend',
     'modeling_cogvlm.CogVLMModel':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedCogVLMModel',
 })

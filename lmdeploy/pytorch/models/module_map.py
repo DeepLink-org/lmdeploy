@@ -360,8 +360,6 @@ MODULE_MAP.update({
 # ascend module
 ASCEND_MODULE_MAP = dict()
 
-DEVICE_SPECIAL_MODULE_MAP = dict(ascend=ASCEND_MODULE_MAP)
-
 # ascend llama
 ASCEND_MODULE_MAP.update({
     'transformers.models.llama.modeling_llama.LlamaFlashAttention2':
@@ -416,3 +414,76 @@ ASCEND_MODULE_MAP.update({
     'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlock':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeSparseMoeBlockAscend',  # noqa: E501
 })
+
+# maca module
+MACA_MODULE_MAP = dict()
+
+# maca internlm2
+MACA_MODULE_MAP.update({
+    'modeling_internlm2.InternLM2RMSNorm':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.LlamaRMSNormMaca',
+    'modeling_internlm2.InternLM2DecoderLayer':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2DecoderLayerMaca',
+    'modeling_internlm2.InternLM2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMaca',
+    'modeling_internlm2.InternLM2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionMaca',
+    'modeling_internlm2.InternLM2MLP':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2MLPMaca',
+})
+
+# maca llama
+# MACA_MODULE_MAP.update({
+#     'transformers.models.llama.modeling_llama.LlamaFlashAttention2':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMaca',
+#     'transformers.models.llama.modeling_llama.LlamaSdpaAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMaca',
+#     'transformers.models.llama.modeling_llama.LlamaAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMaca',
+#     'transformers.models.llama.modeling_llama.LlamaMLP':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMaca',
+#     'transformers.models.llama.modeling_llama.LlamaDecoderLayer':
+#     f'{LMDEPLOY_PYTORCH_MODELING_PATH}.modeling_llama.LlamaDecoderLayer',
+#     # support modeling rewritten in lmdeploy
+#     'modeling_llama.LlamaAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaAttentionMaca',
+#     'modeling_llama.LlamaMLP':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMaca',
+# })
+
+# maca mixtral
+# MACA_MODULE_MAP.update({
+#     'transformers.models.mixtral.modeling_mixtral.MixtralAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMaca',
+#     'transformers.models.mixtral.modeling_mixtral.MixtralFlashAttention2':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMaca',
+#     'transformers.models.mixtral.modeling_mixtral.MixtralSdpaAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralAttentionMaca',
+#     'transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.mixtral.PatchedMixtralSparseMoeBlockMaca',
+# })
+
+# maca deepseek
+# MACA_MODULE_MAP.update({
+#     'modeling_deepseek.DeepseekV2Attention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMaca',
+#     'modeling_deepseek.DeepseekV2FlashAttention2':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMaca',
+#     'modeling_deepseek.DeepseekMoE':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek.PatchedDeepseekV2MoEMaca',
+# })
+
+# maca cogvlm
+# MODULE_MAP.update({
+#     'modeling_cogvlm.MLP':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLPMaca',
+#     'modeling_cogvlm.VisionExpertMLP':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLP',
+#     'modeling_cogvlm.VisionExpertAttention':
+#     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionMaca',
+# })
+
+DEVICE_SPECIAL_MODULE_MAP = dict(
+    ascend=ASCEND_MODULE_MAP,
+    maca=MACA_MODULE_MAP,
+)

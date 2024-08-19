@@ -83,14 +83,22 @@ class CacheEngine:
                               block_size: int,
                               head_size: int,
                               world_size: int = 1,
-                              local: bool = True):
+                              local: bool = True,
+                              vllm_k: bool = False,
+                              vllm_v: bool = False,):
         """get single block shape."""
         num_heads = model_config.num_key_value_heads
         if local and not model_config.multi_query_attention:
             assert num_heads % world_size == 0, \
                 f'num_heads: {num_heads}, world_size: {world_size}'
             num_heads = num_heads // world_size
-        return (block_size, num_heads, head_size)
+        if vllm_k:
+            tmp_tensor = torch.empty(1, dtype=model_config.dtype, device='cuda')
+            x = 32 // tmp_tensor.element_size()
+            return (num_heads, head_size // x, block_size, x)
+        if vllm_v:
+            return (num_heads, block_size, head_size)
+        return (block_size, num_heads, head_size,)
 
     def get_key_block_shape(self, local: bool = False) -> Tuple[int, int, int]:
         """get shape of key block."""
@@ -103,6 +111,7 @@ class CacheEngine:
             head_size=head_size,
             world_size=self.world_size,
             local=local,
+            vllm_k=True,
         )
 
     def get_value_block_shape(self,
@@ -117,6 +126,7 @@ class CacheEngine:
             head_size=head_size,
             world_size=self.world_size,
             local=local,
+            vllm_v=True,
         )
 
     def allocate_gpu_cache(self):

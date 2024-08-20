@@ -20,6 +20,7 @@ prompts = [
 sampling_params = SamplingParams()
 
 # Create an LLM.
+# llm = LLM(model="/data/models/InternVL-Chat-V1-5",
 llm = LLM(model="/data/models/Mini-InternVL-Chat-2B-V1-5",
           tensor_parallel_size=1, #   worker_use_ray=False,
           trust_remote_code=True,

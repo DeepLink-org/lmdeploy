@@ -138,15 +138,11 @@ class PatchedVisionExpertMLP(nn.Module):
         if only_has_language:
             output = self.language_mlp(hidden_states)
         else:
-            output = handle_mask_range_split(hidden_states,
-                                             self.language_mlp,
-                                             self.vision_mlp,
-                                             self.context.context)
-            # output = torch.empty_like(hidden_states)
-            # output[:, vision_token_mask, :] = self.vision_mlp(
-            #     hidden_states[:, vision_token_mask, :])
-            # output[:, language_token_mask, :] = self.language_mlp(
-            #     hidden_states[:, language_token_mask, :])
+            output = torch.empty_like(hidden_states)
+            output[:, vision_token_mask, :] = self.vision_mlp(
+                hidden_states[:, vision_token_mask, :])
+            output[:, language_token_mask, :] = self.language_mlp(
+                hidden_states[:, language_token_mask, :])
         return output
 
 

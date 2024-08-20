@@ -191,14 +191,12 @@ def _update_model(model: torch.nn.Module):
 
     torch.cuda.empty_cache()
     if hasattr(model, 'gate_proj') and not hasattr(model, "dense_h_to_4h"):
-        # imporct pdb; pdb.set_trace()
         model.gate_proj.weight.data = model.gate_proj.weight.data.t().contiguous()
     if hasattr(model, 'up_proj'):
         model.up_proj.weight.data = model.up_proj.weight.data.t().contiguous()
     if hasattr(model, 'down_proj'):
         model.down_proj.weight.data = model.down_proj.weight.data.t().contiguous()
     if hasattr(model, 'gate_proj') and hasattr(model, 'up_proj'):
-        # import pdb; pdb.set_trace()
         model.trans_wgate_up = torch.cat((model.gate_proj.weight, model.up_proj.weight), dim=-1)
         del model.gate_proj
         del model.up_proj
@@ -249,7 +247,6 @@ def _update_model(model: torch.nn.Module):
     if hasattr(model, "fc2"):
         model.fc2.weight.data = model.fc2.weight.data.t().contiguous()
     if hasattr(model, "linear_proj") and hasattr(model.linear_proj, "weight"):
-        # import pdb; pdb.set_trace()
         model.linear_proj.weight.data = model.linear_proj.weight.data.t().contiguous()
     if hasattr(model, "gate_proj") and hasattr(model, "dense_h_to_4h"):
         # gate_proj.weight.data has already transposed.

@@ -1,15 +1,17 @@
+from infer_ext.framework import lmdeploy_ext
+
 from lmdeploy import pipeline
 from lmdeploy import PytorchEngineConfig
 from lmdeploy.vl import load_image
-from torch.profiler import profile, record_function, ProfilerActivity
 
 def main():
-    # pipe = pipeline('/data/models/Mini-InternVL-Chat-4B-V1-5', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16,))
     pipe = pipeline('/data/models/InternVL-Chat-V1-5', backend_config = PytorchEngineConfig(tp=4, device_type='muxi', block_size=16,))
 
-    #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
-    #response = pipe(('describe this image'))
-    #print(response)
+    # image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
+    # response = pipe(('describe this image'))
+
+    # print(response)
+
     prompts = [
         {
             'role': 'user',
@@ -19,12 +21,25 @@ def main():
             ]
         }
     ]
-    #response = pipe(prompts, do_preprocess=True)
-    # response = pipe(prompts)
 
-    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
-    response = pipe(('describe this image', image), do_preprocess=True)
+    # image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
+    # image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
 
+    # response = pipe(('describe', image), do_preprocess=True)
+    # response = pipe(('describe', image1), do_preprocess=True)
+    # response = pipe(prompts, do_preprocess=True)
+
+    response = pipe(('What functions do you have?'), do_preprocess=True)
     print(response)
+    # raise ValueError("test")
+
+    response = pipe(('How are you?'), do_preprocess=True)
+    print(response)
+
+    response = pipe(prompts, do_preprocess=True)
+    print(response)
+
+    raise ValueError("test")
+
 if __name__ == '__main__':
     main()

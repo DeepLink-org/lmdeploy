@@ -11,11 +11,13 @@ from lmdeploy.vl import load_image
 if __name__ == '__main__': 
     torch.manual_seed(10)
     random.seed(10)
-    # pipe = pipeline('/data/models/cogvlm2-llama3-chat-19B', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.01))
-    pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.01))
+    pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
+
     #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
     #response = pipe(('describe this image', image))
-    #print(response)
+
+    # print(response)
+
     prompts = [
         {
             'role': 'user',
@@ -26,16 +28,27 @@ if __name__ == '__main__':
         }
     ]
 
-    # response = pipe(prompts, do_preprocess=True)
     image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
-    image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
+    # image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
 
-    response = pipe(('describe', image1), do_preprocess=True)
+    # response = pipe(('describe', image), do_preprocess=True)
+    # response = pipe(('describe', image1), do_preprocess=True)
+    # response = pipe(prompts, do_preprocess=True)
+
+    response = pipe(('What functions do you have?'), do_preprocess=True)
     print(response)
-    response = pipe(('what is your name?'), do_preprocess=True)
-    print(response)
-    raise ValueError("test")
+    # # raise ValueError("test")
 
     response = pipe(('How are you?'), do_preprocess=True)
     print(response)
+
+    # # response = pipe(prompts, do_preprocess=True)
+    response = pipe(('describe', image), do_preprocess=True)
+    print(response)
+
+    # sess = pipe.chat('What is the woman doing?')
+    # print("############1: ", sess)
+    # sess = pipe.chat(("please describe this image.", image), session=sess)
+    # print("############2: ", sess)
+
     raise ValueError("test")

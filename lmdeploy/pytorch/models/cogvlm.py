@@ -340,7 +340,6 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         def __qkv_proj(hidden_states):
             """qkv_proj."""
             if only_has_language:
-                # import pdb; pdb.set_trace()
                 # mixed_raw_layer = self.language_expert_query_key_value(
                     # hidden_states)
                 mixed_raw_layer = torch.matmul(hidden_states, self.language_expert_query_key_value.weight.data)
@@ -377,44 +376,19 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             position_ids_1d = context.position_ids_1d[None]
             position_ids_t = position_ids_1d.squeeze(0).unsqueeze(-1)
 
-            # import pdb; pdb.set_trace()
             if not hasattr(context, 'cos_sin_cache'):
-                # t = position_ids_t.shape[0]
                 pos_freq = position_ids_t / scaling_factor * inv_freq
-                # if False:
                 if is_decoding:
-                    # print(position_ids_t.shape, position_ids_t.dtype, flush=True)
-                    # print(scaling_factor, flush=True)
-                    # print(inv_freq.shape, inv_freq.dtype, flush=True)
-
-                    # pos_freq = position_ids_t / scaling_factor * inv_freq
                     cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
                     sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).to(query_states.dtype)
-                    # cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
-                    # sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
                 else:
-                    # print(position_ids_t.shape, position_ids_t.dtype, flush=True)
-                    # print(scaling_factor, flush=True)
-                    # print(inv_freq.shape, inv_freq.dtype, flush=True)
-                    # pos_freq = position_ids_t / scaling_factor * inv_freq
                     cos = torch.cos(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
                     sin = torch.sin(pos_freq).view(1, position_ids_t.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
                 context.cos = cos
                 context.sin = sin
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
-            # import pdb; pdb.set_trace()
-            # print(f"is_decoding: {query_states.shape[-3] == q_seq_length.size(0)}.", flush=True)
-            # if False:
             if is_decoding:
-                # import pdb; pdb.set_trace()
-                # query_states, key_states = fused_rotary_emb_op(
-                #     query_states,
-                #     key_states,
-                #     position_ids_t,
-                #     head_dim,
-                #     context=context,
-                # )
                 query_states, key_states = apply_rotary_pos_emb(
                     query_states,
                     key_states,
@@ -422,20 +396,7 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                     head_dim,
                     context=context,
                 )
-                # import pdb; pdb.set_trace()
-                return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
-                # import pdb; pdb.set_trace()
-                # query_states, key_states = fused_rotary_emb_eager(
-                #     query_states[None],
-                #     key_states[None],
-                #     position_ids_t,
-                #     head_dim,
-                #     context=context,
-                # )
-                # # import pdb; pdb.set_trace()
-                # return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
             else:
-                # import pdb; pdb.set_trace()
                 query_states, key_states = fused_rotary_emb_eager(
                     query_states[None],
                     key_states[None],
@@ -443,34 +404,24 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                     head_dim,
                     context=context,
                 )
-                # import pdb; pdb.set_trace()
-                # return query_states[0].view(-1, num_heads, self.head_dim), key_states[0].view(-1, num_kv_heads, self.head_dim), value_states
-                return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
+            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
         is_decoding = query_states.shape[1] == 1
         
-        # import pdb; pdb.set_trace()
-        # if False:
         if is_decoding:
             query_states = query_states.reshape(-1, num_heads * head_dim)
             key_states = key_states.reshape(-1, num_kv_heads * head_dim)
-            # query_states = query_states.reshape(-1, num_heads, head_dim)
-            # key_states = key_states.reshape(-1, num_kv_heads, head_dim)
         else:
             query_states = query_states.reshape(-1, num_heads, head_dim)
             key_states = key_states.reshape(-1, num_kv_heads, head_dim)
 
         value_states = value_states.reshape(-1, num_kv_heads, head_dim)
 
-        # import pdb; pdb.set_trace()
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states, is_decoding)
-        # print(query_states.shape, flush=True)
 
-
-        # import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
             value_states,
@@ -484,8 +435,6 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             context=context,
         )
 
-        # import pdb; pdb.set_trace()
-        # window_size = 2
         if True:
             context_layer = query_states
             paged_attention_fwd(
@@ -664,7 +613,6 @@ def _get_cogvlm_position_ids(context):
             context.vision_token_mask = vision_token_mask_new
             context.language_token_mask = language_token_mask_new
         else:
-            #import pdb; pdb.set_trace()
             position_ids = context.attention_mask.long().cumsum(-1) - 1
             position_ids += (inputs.history_lengths -
                              position_id_offsets).unsqueeze(-1)

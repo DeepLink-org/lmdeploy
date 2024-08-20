@@ -5,7 +5,7 @@ import math
 from torch import Tensor
 
 import vllm._C as vllm_ops
-from maca_extension import ops as ext_ops
+# from maca_extension import ops as ext_ops
 from flash_attn import flash_attn_varlen_func
 
 def make_cu_seqlens(seqlens):
@@ -14,45 +14,46 @@ def make_cu_seqlens(seqlens):
     cu_seqlens = torch.cat([cu_zero, cu_seqlens])
     return cu_seqlens
 
-def flash_attn_varlen_func(
-    query_states,
-    key_states,
-    value_states,
-    cu_seqlens_q,
-    cu_seqlens_kv,
-    max_seqlen_q,
-    max_seqlen_k,
-    dropout_p=0.0,
-    softmax_scale=None,
-    causal=False,
-    window_size=(-1, -1),  # -1 means infinite context window
-    alibi_slopes=None,
-    return_softmax=False,
-):
-    maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
-    query_states, key_states, value_states = [maybe_contiguous(x) for x in (query_states, key_states, value_states)]
+# TODO: support maca_extension flash_attn_varlen_func
+# def flash_attn_varlen_func(
+#     query_states,
+#     key_states,
+#     value_states,
+#     cu_seqlens_q,
+#     cu_seqlens_kv,
+#     max_seqlen_q,
+#     max_seqlen_k,
+#     dropout_p=0.0,
+#     softmax_scale=None,
+#     causal=False,
+#     window_size=(-1, -1),  # -1 means infinite context window
+#     alibi_slopes=None,
+#     return_softmax=False,
+# ):
+#     maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
+#     query_states, key_states, value_states = [maybe_contiguous(x) for x in (query_states, key_states, value_states)]
 
-    out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = ext_ops.flash_attn_varlen_fwd(
-        query_states,
-        key_states,
-        value_states,
-        None,
-        cu_seqlens_q,
-        cu_seqlens_kv,
-        None,
-        alibi_slopes,
-        max_seqlen_q,
-        max_seqlen_k,
-        dropout_p,
-        softmax_scale,
-        False,
-        causal,
-        window_size[0],
-        window_size[1],
-        return_softmax,
-        None,
-    )
-    return out
+#     out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = ext_ops.flash_attn_varlen_fwd(
+#         query_states,
+#         key_states,
+#         value_states,
+#         None,
+#         cu_seqlens_q,
+#         cu_seqlens_kv,
+#         None,
+#         alibi_slopes,
+#         max_seqlen_q,
+#         max_seqlen_k,
+#         dropout_p,
+#         softmax_scale,
+#         False,
+#         causal,
+#         window_size[0],
+#         window_size[1],
+#         return_softmax,
+#         None,
+#     )
+#     return out
 
 def paged_attention_fwd_prefill(
     query_states: Tensor,
@@ -82,6 +83,8 @@ def paged_attention_fwd_prefill(
         max_seqlen (int): The max input length.
         BLOCK (int): The kernel block size.
     """
+    # TODO: support maca_extension paged_attention_fwd_prefill
+    return
 
     _, head, dim = key_states.size()
     # if context and hasattr(context, 'cu_seqlens_q'):
@@ -90,8 +93,6 @@ def paged_attention_fwd_prefill(
     # else:
     #     cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
     #     cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
-    #     max_seqlen_q = q_seqlens.max().item()
-    #     max_seqlen_kv = kv_seqlens.max().item()
 
     if window_size:
         win_size = (window_size, window_size)
@@ -142,7 +143,6 @@ def paged_attention_fwd(
         BLOCK (int): The kernel block size.
     """
 
-    # import pdb; pdb.set_trace()
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
     if not is_decoding:
         _, head, dim = key_states.size()
@@ -152,8 +152,6 @@ def paged_attention_fwd(
         # else:
         #     cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
         #     cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
-        #     max_seqlen_q = q_seqlens.max().item()
-        #     max_seqlen_kv = kv_seqlens.max().item()
  
         if window_size:
             win_size = (window_size, window_size)
@@ -172,16 +170,8 @@ def paged_attention_fwd(
             window_size=win_size,
         ))
     else:
-        # if context and hasattr(context, 'max_kv_seq_length'):
-        #     max_seqlen_kv = context.max_kv_seq_length
-        # else:
-        #     max_seqlen_kv = kv_seqlens.max().item()
-
         block_num, head, block_size, dim = value_cache.size()
-
-        # import pdb; pdb.set_trace()
         vllm_ops.ops.paged_attention_v1(
-        # ext_ops.paged_attention_v1(
             attn_output,
             query_states,
             key_cache,

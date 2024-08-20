@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 # modify from: https://github.com/ModelTC/lightllm
+import math
 import torch
 import triton
 import triton.language as tl
@@ -8,7 +9,7 @@ from torch import Tensor
 
 from lmdeploy.utils import get_logger
 
-from .triton_utils import get_kernel_meta, wrap_jit_func
+from triton_utils import get_kernel_meta, wrap_jit_func
 
 logger = get_logger('lmdeploy')
 
@@ -892,3 +893,43 @@ def paged_attention_fwd(
                                    num_warps=num_warps,
                                    num_stages=1,
                                    **kernel_meta)
+
+def load_tensor(name):
+    import pickle
+    with open(f'/home/SAIL/zhousl/{name}.pkl', 'rb') as f:
+            x = pickle.load(f)
+    if isinstance(x, torch.Tensor):
+            return x.cuda()
+    return x
+
+if __name__ == '__main__':
+    query_states = load_tensor("query_states")
+    key_states = load_tensor("k_states")
+    value_states = load_tensor("v_states")
+    key_cache = load_tensor("k_caches")
+    value_cache = load_tensor("v_caches")
+    attn_output = load_tensor("query_states")
+
+    block_offsets = load_tensor("block_offsets")
+    q_start_loc = load_tensor("q_start_loc")
+    q_seqlens = load_tensor("q_seq_length")
+    kv_seqlens = load_tensor("kv_seq_length")
+    max_q_seq_length = load_tensor("max_q_seq_length")
+    max_kv_seq_length = load_tensor("max_q_seq_length")
+
+    # torch_output = load_tensor("torch_output")
+
+    block_num, head_num, t1, block_size, t2 = key_cache.shape
+    key_cache = key_cache.reshape(block_num, block_size, head_num, t1 * t2)
+    block_num, head_num, block_size, head_size = value_cache.shape
+    value_cache = value_cache.reshape(block_num, block_size, head_num, head_size)
+
+    sm_scale = float(1 / math.sqrt(head_size))
+
+    triton_output = paged_attention_fwd(query_states, key_cache, value_cache, attn_output, block_offsets, q_start_loc, q_seqlens, kv_seqlens, max_q_seq_length, sm_scale=sm_scale)
+
+    torch_output = load_tensor("attn_output")
+
+    assert torch.allclose(torch_output, attn_output, atol=1e-2, rtol=0)
+
+    print("success!")

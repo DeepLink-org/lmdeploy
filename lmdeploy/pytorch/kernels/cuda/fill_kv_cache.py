@@ -4,7 +4,7 @@ import triton
 import triton.language as tl
 from torch import Tensor
 
-from .triton_utils import get_kernel_meta, wrap_jit_func
+from triton_utils import get_kernel_meta, wrap_jit_func
 
 
 @triton.jit
@@ -185,3 +185,42 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
         num_stages=3,
         **kernel_meta,
     )
+
+def load_tensor(name):
+    import pickle
+    with open(f'/home/SAIL/zhousl/{name}.pkl', 'rb') as f:
+            x = pickle.load(f)
+    if isinstance(x, torch.Tensor):
+            return x.cuda()
+    return x
+
+if __name__ == '__main__':
+    # def test_fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
+    #                        v_caches: Tensor, q_start_loc: Tensor, q_seq_length: Tensor,
+    #                        kv_seq_length: Tensor, max_q_seq_length: int,
+    #                        block_offsets: Tensor):
+
+    #     pass
+
+    k_states = load_tensor("k_states")
+    v_states = load_tensor("v_states")
+    k_caches = load_tensor("k_caches")
+    v_caches = load_tensor("v_caches")
+    q_start_loc = load_tensor("q_start_loc")
+    q_seq_length = load_tensor("q_seq_length")
+    kv_seq_length = load_tensor("kv_seq_length")
+    max_q_seq_length = load_tensor("max_q_seq_length")
+    block_offsets = load_tensor("block_offsets")
+    # torch_output = load_tensor("torch_output")
+
+    block_num, head_num, t1, block_size, t2 = k_caches.shape
+    k_caches = k_caches.reshape(block_num, block_size, head_num, t1 * t2)
+    block_num, head_num, block_size, head_size = v_caches.shape
+    v_caches = v_caches.reshape(block_num, block_size, head_num, head_size)
+
+    triton_output = fill_kv_cache(k_states, v_states, k_caches, v_caches, q_start_loc, q_seq_length, kv_seq_length, max_q_seq_length, block_offsets)
+
+    # assert torch.allclose(torch_output, triton_output, atol=1e-2, rtol=0)
+
+    print("success!")
+    

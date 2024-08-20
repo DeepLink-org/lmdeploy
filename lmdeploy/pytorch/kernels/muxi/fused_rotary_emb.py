@@ -3,7 +3,7 @@ from torch import nn
 from torch import Tensor
 
 from vllm._C import ops
-
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
@@ -11,49 +11,56 @@ def rotate_half(x):
     x2 = x[..., x.shape[-1] // 2:]
     return torch.cat((-x2, x1), dim=-1)
 
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     """Applies Rotary Position Embedding to the query and key tensors."""
+    # import pdb; pdb.set_trace()
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
 
-
 def fused_rotary_emb(
     query_states: Tensor,
     key_states: Tensor,
     position_ids: torch.LongTensor,
-    inv_freq: Tensor,
-    scaling_factor: float,
-    out_q: Tensor = None,
-    out_k: Tensor = None,
+    head_dim: int,
     context=None,
 ):
-    bs, seq_len, head, dim = query_states.shape
-    kv_head = key_states.shape[2]
-
-    if context and hasattr(context, "cos_sin_cache"):
-        cos_sin_cache = context.cos_sin_cache
-    else:
-        position_ids = position_ids.squeeze(0).unsqueeze(-1)
-        pos_freq = position_ids / scaling_factor * inv_freq
-
-        cos = torch.cos(pos_freq).view(1, seq_len, -1).repeat(1, 1, 2).to(query_states.dtype)
-        sin = torch.sin(pos_freq).view(1, seq_len, -1).repeat(1, 1, 2).to(query_states.dtype)
-
-        # query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
-
-        new_cos = cos[..., :cos.shape[-1] // 2]
-        new_sin = sin[..., :sin.shape[-1] // 2]
-        cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
-
-    ops.rotary_embedding(position_ids.view(seq_len),
-                        query_states.view(seq_len, head * dim),
-                        key_states.view(seq_len, kv_head * dim),
-                        dim,
-                        cos_sin_cache,
+    # import pdb; pdb.set_trace()
+    ops.rotary_embedding(position_ids,
+                        query_states,
+                        key_states,
+                        head_dim,
+                        context.cos_sin_cache,
                         True)
+    # import pdb; pdb.set_trace()
 
-    return query_states.view(bs, seq_len, head, dim), key_states.view(bs, seq_len, kv_head, dim)
+    return query_states, key_states
+
+def fused_rotary_emb_op(
+    query_states: Tensor,
+    key_states: Tensor,
+    position_ids: torch.LongTensor,
+    head_dim: int,
+    context=None,
+):
+    # import pdb; pdb.set_trace()
+    ops.rotary_embedding(position_ids,
+                        query_states,
+                        key_states,
+                        head_dim,
+                        context.cos_sin_cache,
+                        True)
+    # import pdb; pdb.set_trace()
+    return query_states, key_states
+
+def fused_rotary_emb_eager(
+    query_states: Tensor,
+    key_states: Tensor,
+    position_ids: torch.LongTensor,
+    head_dim: int,
+    context=None,
+):
+    query_states, key_states = apply_rotary_pos_emb(query_states, key_states, context.cos, context.sin, position_ids)
+    return query_states, key_states

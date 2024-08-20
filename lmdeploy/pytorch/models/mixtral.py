@@ -214,33 +214,33 @@ class PatchedMixtralAttentionMuxi(nn.Module):
 
         def __rotary_emb_fn(query_states, key_states, value_states):
             if hasattr(self, 'rotary_emb'):
-                if not hasattr(context, '_cos'):
+                if not hasattr(context, 'cos_sin_cache'):
                     cos, sin = self.rotary_emb(value_states,
                                                seq_len=max_kv_seq_length)
-                    context._cos = cos
-                    context._sin = sin
-                else:
-                    cos = context._cos
-                    sin = context._sin
+                    new_cos = cos.squeeze(-2)
+                    new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+                    new_sin = sin.squeeze(-2)
+                    new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+                    cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                    context.cos_sin_cache = cos_sin_cache
+
                 query_states, key_states = apply_rotary_pos_emb(
                     query_states,
                     key_states,
-                    cos,
-                    sin,
-                    position_ids,
                     context.position_ids_1d,
-                    q_embed=query_states,
-                    k_embed=key_states)
-            return query_states, key_states, value_states
+                    self.head_dim,
+                    context)
+            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        query_states = query_states.view(-1, num_heads, self.head_dim)
-        key_states = key_states.view(-1, num_kv_heads, self.head_dim)
+        query_states = query_states.view(-1, num_heads * self.head_dim)
+        key_states = key_states.view(-1, num_kv_heads * self.head_dim)
         value_states = value_states.view(-1, num_kv_heads, self.head_dim)
 
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
+
         # fill kv cache
         fill_kv_cache(
             key_states,
@@ -265,10 +265,10 @@ class PatchedMixtralAttentionMuxi(nn.Module):
             past_key_value[1],
             attn_output,
             block_offsets,
-            q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
-            max_seqlen=max_q_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
             window_size=window_size,
             context=context,
         )

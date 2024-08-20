@@ -156,9 +156,111 @@ def _update_model(model: torch.nn.Module):
     for _, child in model.named_children():
         _update_model(child)
 
+
+    torch.cuda.empty_cache()
+    # trans weights
+    if hasattr(model, "weight"):
+        if isinstance(model.weight, torch.nn.parameter.Parameter):
+            model.weight.data = model.weight.data.contiguous()
+        elif isinstance(model.weight, torch.Tensor):
+            model.weight = model.weight.contiguous()
+        else:
+            raise ValueError(f"Unsupported weight type: {type(model.weight)}.")
+
+    if hasattr(model, "q_proj"):
+        model.q_proj.weight.data = model.q_proj.weight.data.t().contiguous()
+    if hasattr(model, "k_proj"):
+        model.k_proj.weight.data = model.k_proj.weight.data.t().contiguous()
+    if hasattr(model, "v_proj"):
+        model.v_proj.weight.data = model.v_proj.weight.data.t().contiguous()
+    if hasattr(model, 'o_proj'):
+        model.o_proj.weight.data = model.o_proj.weight.data.t().contiguous()
+    if hasattr(model, "q_proj") and hasattr(model, "k_proj") and hasattr(model, 'v_proj'):
+        qkv = torch.cat((model.q_proj.weight, model.k_proj.weight, model.v_proj.weight), dim=-1)
+        head_dim = model.head_dim
+        kv_groups = model.num_key_value_groups
+        size = qkv.shape[0]
+        qkv = qkv.reshape(size, -1, kv_groups + 2, head_dim)
+        wq, wk, wv = qkv.split([kv_groups, 1, 1], dim=-2)
+        del qkv
+        wq = wq.reshape(size, -1)
+        wk = wk.reshape(size, -1)
+        wv = wv.reshape(size, -1)
+        model.qkv = torch.cat([wq, wk, wv], dim=-1)
+        del wq, wk, wv
+
+    torch.cuda.empty_cache()
+    if hasattr(model, 'gate_proj') and not hasattr(model, "dense_h_to_4h"):
+        # imporct pdb; pdb.set_trace()
+        model.gate_proj.weight.data = model.gate_proj.weight.data.t().contiguous()
+    if hasattr(model, 'up_proj'):
+        model.up_proj.weight.data = model.up_proj.weight.data.t().contiguous()
+    if hasattr(model, 'down_proj'):
+        model.down_proj.weight.data = model.down_proj.weight.data.t().contiguous()
+    if hasattr(model, 'gate_proj') and hasattr(model, 'up_proj'):
+        # import pdb; pdb.set_trace()
+        model.trans_wgate_up = torch.cat((model.gate_proj.weight, model.up_proj.weight), dim=-1)
+        del model.gate_proj
+        del model.up_proj
+
+    if hasattr(model, 'wqkv'):
+        wqkv = model.wqkv.weight.data.t().contiguous()
+        del model.wqkv
+        head_dim = model.head_dim
+        kv_groups = model.num_key_value_groups
+        size = wqkv.shape[0]
+        wqkv = wqkv.reshape(size, -1, kv_groups + 2, head_dim)
+        wq, wk, wv = wqkv.split([kv_groups, 1, 1], dim=-2)
+        wq = wq.reshape(size, -1)
+        wk = wk.reshape(size, -1)
+        wv = wv.reshape(size, -1)
+        model.wqkv = torch.cat([wq, wk, wv], dim=-1)
+        del wq, wk, wv
+
+    if hasattr(model, 'wo'):
+        model.wo.weight.data= model.wo.weight.data.t().contiguous()
+    if hasattr(model, 'w1'):
+        model.w1.weight.data = model.w1.weight.data.t().contiguous()
+    if hasattr(model, 'w2'):
+        model.w2.weight.data = model.w2.weight.data.t().contiguous()
+    if hasattr(model, 'w3'):
+        model.w3.weight.data = model.w3.weight.data.t().contiguous()
+    if hasattr(model, 'w1') and hasattr(model, 'w3'):
+        model.trans_w13 = torch.cat((model.w1.weight, model.w3.weight), dim=-1)
+        del model.w1, model.w3
+
+    # cogvlm language
+    if hasattr(model, 'language_expert_dense'):
+        model.language_expert_dense.weight.data = model.language_expert_dense.weight.data.t().contiguous()
+    if hasattr(model, 'language_expert_query_key_value'):
+        model.language_expert_query_key_value.weight.data = model.language_expert_query_key_value.weight.data.t().contiguous()
+    if hasattr(model, 'vision_expert_dense'):
+        model.vision_expert_dense.weight.data = model.vision_expert_dense.weight.data.t().contiguous()
+    if hasattr(model, 'vision_expert_query_key_value'):
+        model.vision_expert_query_key_value.weight.data = model.vision_expert_query_key_value.weight.data.t().contiguous()
+    
+    # cogvlm visual
+    if hasattr(model, "query_key_value"):
+        model.query_key_value.weight.data = model.query_key_value.weight.data.t().contiguous()
+    if hasattr(model, "dense"):
+        model.dense.weight.data = model.dense.weight.data.t().contiguous()
+    if hasattr(model, "fc1"):
+        model.fc1.weight.data = model.fc1.weight.data.t().contiguous()
+    if hasattr(model, "fc2"):
+        model.fc2.weight.data = model.fc2.weight.data.t().contiguous()
+    if hasattr(model, "linear_proj") and hasattr(model.linear_proj, "weight"):
+        # import pdb; pdb.set_trace()
+        model.linear_proj.weight.data = model.linear_proj.weight.data.t().contiguous()
+    if hasattr(model, "gate_proj") and hasattr(model, "dense_h_to_4h"):
+        # gate_proj.weight.data has already transposed.
+        model.gate_proj.weight.data = model.gate_proj.weight.data.t().contiguous()
+        model.dense_h_to_4h.weight.data = model.dense_h_to_4h.weight.data.t().contiguous()
+        model.gate_dense_weight = torch.cat((model.gate_proj.weight, model.dense_h_to_4h.weight), dim=-1)
+    if hasattr(model, "dense_4h_to_h"):
+        model.dense_4h_to_h.weight.data = model.dense_4h_to_h.weight.data.t().contiguous()
+
     if hasattr(model, '_update_model_fn'):
         model._update_model_fn()
-
 
 def update_model(model: torch.nn.Module):
     """update model."""
@@ -258,5 +360,5 @@ def patch(
                                      _patch_context,
                                      extra_args=extra_args)
     model.patched_forward = patched_forward
-
+        
     return model

@@ -8,6 +8,7 @@ from transformers import AutoConfig, AutoModelForCausalLM
 
 from lmdeploy.vl.model.base import VisonModel
 from lmdeploy.vl.model.utils import disable_logging
+from lmdeploy.pytorch.models.patch import patch, update_model
 
 
 class CogVLMVisionModel(VisonModel):
@@ -69,6 +70,7 @@ class CogVLMVisionModel(VisonModel):
                 no_split_module_classes=no_split_module_classes,
                 dtype=torch.half)
         self.model = model.model.vision
+        update_model(self.model)
         self.model.eval()
 
     @torch.no_grad()

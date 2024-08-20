@@ -204,14 +204,14 @@ class PytorchEngineConfig:
     cache_max_entry_count: float = 0.8
     eviction_type: str = 'recompute'
     prefill_interval: int = 16
-    block_size: int = 16
+    block_size: int = 64
     num_cpu_blocks: int = 0
     num_gpu_blocks: int = 0
     adapters: Dict[str, str] = None
     max_prefill_token_num: int = 4096
     thread_safe: bool = False
     enable_prefix_caching: bool = False
-    device_type: str = 'ascend'
+    device_type: str = 'cuda'
     download_dir: str = None
     revision: str = None
 

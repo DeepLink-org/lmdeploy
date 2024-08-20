@@ -84,27 +84,14 @@ class Engine:
             self.model_name = model_name
         self.pbar = None
 
-    def _inference(self,
-                   req_queue: Queue,
-                   res_queue: Queue,
-                   session_id: int,
-                   stream_output: bool,
-                   image_url: str = None):
+    def _inference(self, req_queue: Queue, res_queue: Queue, session_id: int,
+                   stream_output: bool):
 
         stats = []
         client = APIClient(self.server_addr, api_key=self.api_key)
 
         for prompt, input_seqlen, output_seqlen in iter(
                 req_queue.get, [None, None, None]):
-            if image_url is not None:
-                prompt = [
-                    dict(role='user',
-                         content=[
-                             dict(type='text', text=prompt),
-                             dict(type='image_url',
-                                  image_url=dict(url=image_url))
-                         ])
-                ]
             timestamps = []
             timestamps.append(time.perf_counter())
             for output in client.chat_completions_v1(
@@ -136,8 +123,7 @@ class Engine:
     def process_request(self,
                         requests,
                         concurrency: int = 1,
-                        stream_output: bool = False,
-                        img_hw: str = None):
+                        stream_output: bool = False):
         res_queue = Queue()
         req_queue = Queue()
         threads = []
@@ -152,28 +138,10 @@ class Engine:
 
         start = time.time()
 
-        if img_hw is not None:
-            import PIL
-
-            from lmdeploy.vl.utils import encode_image_base64
-            h, w = [int(s) for s in img_hw.split('x')]
-            data = np.random.randint(low=0,
-                                     high=255,
-                                     size=h * w * 3,
-                                     dtype=np.uint8)
-            data = data.reshape(h, w, 3)
-            img = PIL.Image.fromarray(data, 'RGB')
-            encoded = encode_image_base64(img)
-            image_url = f'data:image/jpeg;base64,{encoded}'
-        else:
-            image_url = None
-
         # start threads
         for i in range(concurrency):
             t = Thread(target=self._inference,
-            #           args=(req_queue, res_queue, i, stream_output))
-                       args=(req_queue, res_queue, i, stream_output,
-                             image_url))
+                       args=(req_queue, res_queue, i, stream_output))
             t.start()
             threads.append(t)
 
@@ -254,8 +222,7 @@ def main(server_addr: str,
          temperature: float = 1.0,
          stream_output: bool = False,
          csv: str = './profile_api_server.csv',
-         seed: int = 0,
-         img_hw: str = None):
+         seed: int = 0):
     """Benchmark the request througput of api server.
 
     Args:
@@ -273,8 +240,6 @@ def main(server_addr: str,
         stream_output (bool, optional): Indicator for streaming output. Defaults to False.
         csv (str, optional): The path to save the result.
         seed (int, optional): Seed used in sampling prompts from dataset. Defaults to 0.
-        img_hw (str, optional): The image size to benchmark vl serving, such as '512x512'.
-            Default to None, which means to benchmark language model only.
     """    # noqa
     if not server_addr.startswith('http://'):
         print(f'[WARNING] server_addr of the api_server should '
@@ -293,7 +258,7 @@ def main(server_addr: str,
 
     requests = sample_requests(dataset, num_prompts, engine.tokenizer)
 
-    engine.process_request(requests, concurrency, stream_output, img_hw)
+    engine.process_request(requests, concurrency, stream_output)
 
 
 if __name__ == '__main__':

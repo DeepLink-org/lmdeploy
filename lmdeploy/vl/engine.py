@@ -12,8 +12,11 @@ from lmdeploy.messages import (PytorchEngineConfig, TurbomindEngineConfig,
 from lmdeploy.utils import get_logger
 from lmdeploy.vl.model.builder import load_vl_model
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 logger = get_logger('lmdeploy')
 
+record_count = -1
 
 class Record:
     """Batching manager."""
@@ -105,7 +108,13 @@ class ImageEncoder:
     def forward(self, inputs: List[Image]):
         """Model forward."""
         time_start = time.perf_counter()
-        outputs = self.model.forward(inputs)
+        # global record_count
+        # record_count = record_count + 1
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        if True:
+            # with record_function("model_forward_vit"):
+            outputs = self.model.forward(inputs)
+        # prof.export_chrome_trace(f"/home/pujiang/zhousl/cogvlm_timeline_vit/cogvlm_forward_{record_count}.json")
         if isinstance(outputs[0], torch.Tensor):
             outputs = [x.cpu() for x in outputs]
         time_end = time.perf_counter()

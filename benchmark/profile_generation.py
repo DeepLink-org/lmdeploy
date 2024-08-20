@@ -324,6 +324,11 @@ def parse_args():
                         type=int,
                         help='number of warmup rounds',
                         default=1)
+    parser.add_argument('--tp',
+                        '--tensor_parallel_size',
+                        type=int,
+                        help='tensor_parallel_size',
+                        default=1)
 
     # other args
     ArgumentHelper.top_p(parser)
@@ -333,7 +338,7 @@ def parse_args():
     ArgumentHelper.backend(parser)
     # pytorch engine args
     pt_group = parser.add_argument_group('PyTorch engine arguments')
-    tp_act = ArgumentHelper.tp(pt_group)
+    # tp_act = ArgumentHelper.tp(parser)
     cache_count_act = ArgumentHelper.cache_max_entry_count(pt_group)
     cache_block_seq_len_act = ArgumentHelper.cache_block_seq_len(pt_group)
     session_len_act = ArgumentHelper.session_len(pt_group, default=2048)
@@ -342,7 +347,7 @@ def parse_args():
 
     # turbomind engine args
     tb_group = parser.add_argument_group('TurboMind engine argument')
-    tb_group._group_actions.append(tp_act)
+    # tb_group._group_actions.append(tp_act)
     tb_group._group_actions.append(session_len_act)
     tb_group._group_actions.append(cache_count_act)
     tb_group._group_actions.append(cache_block_seq_len_act)
@@ -426,16 +431,27 @@ def main():
                 temperature=args.temperature,
                 max_new_tokens=completion_tokens,
                 ignore_eos=True)
-            profile_target = partial(
-                profile_throughput,
-                concurrency=batch,
-                input_seqlen=prompt_tokens,
-                engine_config=engine_config,
-                gen_config=gen_config,
-                test_round=args.test_round,
-                warmup_round=args.warmup_round,
+
+            output = profile_throughput(model_path=args.model_path,
+                                        concurrency=batch,
+                                        input_seqlen=prompt_tokens,
+                                        engine_config=engine_config,
+                                        gen_config=gen_config,
+                                        test_round=args.test_round,
+                                        warmup_round=args.warmup_round,
             )
-            output = _process_map(profile_target, (args.model_path, ))
+
+            # profile_target = partial(
+            #     profile_throughput,
+            #     concurrency=batch,
+            #     input_seqlen=prompt_tokens,
+            #     engine_config=engine_config,
+            #     gen_config=gen_config,
+            #     test_round=args.test_round,
+            #     warmup_round=args.warmup_round,
+            # )
+            # output = _process_map(profile_target, (args.model_path, ))
+
             model_name, first_token_latency, percentiles, \
                 throughput_per_proc, tp = output
             time.sleep(5)  # wait a while for releasing GPU mem

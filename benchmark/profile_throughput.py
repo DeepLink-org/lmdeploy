@@ -270,6 +270,11 @@ def parse_args():
                         type=int,
                         default=0,
                         help='Seed used in sampling prompts from dataset')
+    parser.add_argument('--tp',
+                        '--tensor_parallel_size',
+                        type=int,
+                        help='tensor_parallel_size',
+                        default=1)
     # other args
     ArgumentHelper.top_p(parser)
     ArgumentHelper.temperature(parser)
@@ -279,7 +284,7 @@ def parse_args():
 
     # pytorch engine args
     pt_group = parser.add_argument_group('PyTorch engine arguments')
-    tp_act = ArgumentHelper.tp(pt_group)
+    # tp_act = ArgumentHelper.tp(pt_group)
     session_len_act = ArgumentHelper.session_len(pt_group, default=4096)
     cache_count_act = ArgumentHelper.cache_max_entry_count(pt_group)
     cache_block_seq_len_act = ArgumentHelper.cache_block_seq_len(pt_group)
@@ -287,7 +292,7 @@ def parse_args():
 
     # turbomind engine args
     tb_group = parser.add_argument_group('TurboMind engine argument')
-    tb_group._group_actions.append(tp_act)
+    # tb_group._group_actions.append(tp_act)
     tb_group._group_actions.append(session_len_act)
     tb_group._group_actions.append(cache_count_act)
     tb_group._group_actions.append(cache_block_seq_len_act)
@@ -322,10 +327,11 @@ def main():
         engine_config = PytorchEngineConfig(
             session_len=args.session_len,
             cache_max_entry_count=args.cache_max_entry_count,
-            block_size=args.cache_block_seq_len,
             max_batch_size=args.concurrency,
             tp=args.tp,
             thread_safe=True,
+            block_size=16,
+            device_type='muxi',
             enable_prefix_caching=args.enable_prefix_caching,
         )
 

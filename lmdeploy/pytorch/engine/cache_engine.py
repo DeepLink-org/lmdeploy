@@ -93,7 +93,7 @@ class CacheEngine:
                 f'num_heads: {num_heads}, world_size: {world_size}'
             num_heads = num_heads // world_size
         if vllm_k:
-            tmp_tensor = torch.empty(1, dtype=model_config.dtype, device='cuda')
+            tmp_tensor = torch.empty(1, dtype=model_config.dtype, device='meta')
             x = 32 // tmp_tensor.element_size()
             return (num_heads, head_size // x, block_size, x)
         if vllm_v:

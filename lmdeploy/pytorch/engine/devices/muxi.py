@@ -36,8 +36,9 @@ class MUXIDeviceUtils(BaseDeviceUtils):
                 block_loc = step_context.block_offsets[i][block_idx]
         kv_start_indices = torch.tensor(
             kv_start_indices, device=step_context.block_offsets.device)
+        #attention_mask = torch.stack(attention_mask)
         setattr(step_context, 'kv_start_indices', kv_start_indices)
-        setattr(step_context, 'attention_mask', attention_mask)
+        # setattr(step_context, 'attention_mask', attention_mask)
 
         def _make_cu_seqlens(seqlens):
             cu_seqlens = seqlens.cumsum(0)
@@ -50,4 +51,8 @@ class MUXIDeviceUtils(BaseDeviceUtils):
 
         setattr(step_context, 'cu_seqlens_q', cu_seqlens_q)
         setattr(step_context, 'cu_seqlens_kv', cu_seqlens_kv)
+
+        step_context.block_offsets = step_context.block_offsets.to(torch.int32)
+        step_context.kv_seq_length = step_context.kv_seq_length.to(torch.int32)
+
         return step_context

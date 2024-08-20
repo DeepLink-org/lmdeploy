@@ -5,11 +5,25 @@ import torch
 import torch.distributed as dist
 from einops import rearrange
 from torch import nn
+from transformers.cache_utils import Cache
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
-from ..kernels import apply_rotary_pos_emb, fill_kv_cache, paged_attention_fwd
+from ..kernels import apply_rotary_pos_emb, fill_kv_cache, paged_attention_fwd, rms_norm
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
+
+import vllm._C.ops as ops
+
+class LlamaRMSNorm(nn.Module):
+    """Rewrite RMSNorm."""
+
+    def forward(self, hidden_states, residual: torch.Tensor = None):
+        """forward."""
+        # torch.nn.functional.normalize based implementation might leads
+        # to wrong output
+        ret = rms_norm(hidden_states, self.weight, self.variance_epsilon, residual)
+
+        return ret
 
 
 class PatchedInternLM2Attention(nn.Module):
@@ -221,27 +235,17 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
         position_ids_1d = context.position_ids_1d
         max_kv_seq_length = context.max_kv_seq_length
 
-        if not hasattr(self, 'trans_wqkv'):
-            self.trans_wqkv = self.wqkv.weight.t().contiguous()
-            self.wqkv_bias = self.wqkv.bias
-            del self.wqkv
+        num_heads = self.num_heads // world_size
+        num_kv_heads = self.num_key_value_heads // world_size
+        head_dim = self.head_dim
 
         def __qkv_proj(hidden_states):
             """qkv_proj."""
-            qkv_states = torch.matmul(hidden_states, self.trans_wqkv)
-            if self.wqkv_bias:
-                qkv_states = qkv_states + self.wqkv_bias
-            qkv_states = rearrange(
-                qkv_states,
-                'b q (h gs d) -> (b q) h gs d',
-                gs=2 + self.num_key_value_groups,
-                d=self.head_dim,
-            )
-            query_states = qkv_states[..., :self.num_key_value_groups, :]
-            query_states = query_states.flatten(1, 2)
-            key_states = qkv_states[..., -2, :]
-            value_states = qkv_states[..., -1, :]
-            return query_states, key_states, value_states
+            qkv_states = torch.matmul(hidden_states, self.wqkv)
+            kv_dim_size = self.wqkv.shape[-1] // (self.num_key_value_groups + 2)
+            q_dim_size = kv_dim_size * self.num_key_value_groups
+            query_states, key_states, value_states = qkv_states.split([q_dim_size, kv_dim_size, kv_dim_size], dim=-1)
+            return query_states, key_states, value_states.view(-1, num_kv_heads, self.head_dim)
 
         def __rotary_emb_fn(query_states, key_states, value_states):
             """rotary embedding func."""
@@ -252,7 +256,7 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                 args = inspect.getargspec(self.rotary_emb.forward)[0]
                 self._use_old_rotary_emb = 'seq_len' in args
 
-            if not hasattr(context, '_cos'):
+            if not hasattr(context, 'cos_sin_cache'):
                 if self._use_old_rotary_emb:
                     kwargs = dict(seq_len=max_kv_seq_length)
                 else:
@@ -260,17 +264,12 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
 
                 cos, sin = self.rotary_emb(value_states.transpose(0, 1),
                                            **kwargs)
-                context._cos = cos
-                context._sin = sin
                 new_cos = cos.squeeze(-2)
                 new_cos = new_cos[..., :new_cos.shape[-1] // 2]
                 new_sin = sin.squeeze(-2)
                 new_sin = new_sin[..., :new_sin.shape[-1] // 2]
                 cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
                 context.cos_sin_cache = cos_sin_cache
-            else:
-                cos = context._cos
-                sin = context._sin
 
             if self._use_old_rotary_emb:
                 _position_ids_1d = position_ids_1d
@@ -278,24 +277,22 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                 _position_ids_1d = torch.arange(0,
                                                 len(position_ids_1d),
                                                 device=query_states.device)
+            # import pdb; pdb.set_trace()
             query_states, key_states = apply_rotary_pos_emb(
                 query_states,
                 key_states,
-                cos,
-                sin,
-                position_ids,
-                position_ids_1d=_position_ids_1d,
-                q_embed=query_states,
-                k_embed=key_states,
+                _position_ids_1d,
+                self.head_dim,
                 context=context,
             )
-            return query_states, key_states, value_states
+            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
 
+        # import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
             value_states,
@@ -309,7 +306,16 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             context=context,
         )
 
+        def dump_tensor(x, name):
+            import pickle
+            with open(f'/home/pujiang/zhousl/{name}.pkl', 'wb') as f:
+                if isinstance(x, torch.Tensor):
+                    pickle.dump(x.cpu(), f)
+                else:
+                    pickle.dump(x, f)
+
         attn_output = query_states
+        # import pdb; pdb.set_trace()
         paged_attention_fwd(
             query_states,
             key_states,
@@ -318,22 +324,19 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             past_key_value[1],
             attn_output,
             block_offsets,
-            q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
-            max_seqlen=max_q_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
             window_size=None,
             context=context,
         )
-        attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
+        # import pdb; pdb.set_trace()
+        attn_output = attn_output.view(*hidden_states.shape[:-1], -1)
 
-        if not hasattr(self, 'trans_wo'):
-            self.trans_wo = self.wo.weight.t().contiguous()
-            self.wo_bias = self.wo.bias
-            self.wo = None
-        attn_output = torch.matmul(attn_output, self.trans_wo)
-        if self.wo_bias:
-            attn_output = attn_output + self.wo_bias
+        attn_output = torch.matmul(attn_output, self.wo.weight)
+        if self.wo.bias:
+            attn_output = attn_output + self.wo.bias
 
         return attn_output, None, past_key_value
 
@@ -411,19 +414,13 @@ class PatchedInternLM2MLPMuxi(nn.Module):
 
     def forward(self, x):
         # w1/w2/w3 bias is None for internlm2
-        if not hasattr(self, 'trans_w1'):
-            self.trans_w1 = self.w1.weight.t().contiguous()
-            del self.w1
-        if not hasattr(self, 'trans_w2'):
-            self.trans_w2 = self.w2.weight.t().contiguous()
-            del self.w2
-        if not hasattr(self, 'trans_w3'):
-            self.trans_w3 = self.w3.weight.t().contiguous()
-            del self.w3
-        tmp_w1 = torch.matmul(x, self.trans_w1)
-        tmp_act = self.act_fn(tmp_w1)
-        tmp_w3 = torch.matmul(x, self.trans_w3)
-        down_proj = torch.matmul(tmp_act * tmp_w3, self.trans_w2)
+        t = torch.matmul(x, self.trans_w13)
+        t_shape = t.shape
+        d = t_shape[-1] // 2
+        output_shape = (t_shape[:-1] + (d, ))
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        ops.silu_and_mul(out, t)
+        down_proj = torch.matmul(out, self.w2.weight)
 
         return down_proj
 
@@ -446,6 +443,9 @@ class PatchedInternLM2Model(nn.Module):
         vision_embeddings = context.input_embeddings
         vision_embedding_indexing = context.input_embedding_indexing
 
+        # context.block_offsets = context.block_offsets.to(torch.int32)
+        # context.kv_seq_length = context.kv_seq_length.to(torch.int32)
+
         if inputs_embeds is None:
             inputs_embeds = self.tok_embeddings(input_ids)
 
@@ -457,6 +457,7 @@ class PatchedInternLM2Model(nn.Module):
         # Attention mask is not necessary in continuous batching
         attention_mask = None
         hidden_states = inputs_embeds
+        residual = None
 
         # decoder layers
         for idx, decoder_layer in enumerate(self.layers):
@@ -469,10 +470,12 @@ class PatchedInternLM2Model(nn.Module):
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
+                residual = residual,
             )
-            hidden_states = layer_outputs[0]
+            hidden_states, residual = layer_outputs[0], layer_outputs[1]
 
-        hidden_states = self.norm(hidden_states)
+
+        hidden_states, _ = self.norm(hidden_states, residual)
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
@@ -502,3 +505,85 @@ class PatchedInternLM2Model(nn.Module):
             use_cache,
             output_attentions,
         )
+
+
+# Modified from transformers.models.llama.modeling_llama.LlamaDecoderLayer with Llama->InternLM2
+class PatchedInternLM2DecoderLayerMuxi(nn.Module):
+    """InternLM2 Decoder Layer.
+
+    This module is a single layer of the InternLM2 model.
+    """
+
+    def __init__(self, config, layer_idx: int):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.layer_idx = layer_idx
+
+        self.attention = PatchedInternLM2Attention(config=config, layer_idx=layer_idx)
+
+        self.feed_forward = PatchedInternLM2MLP(config)
+        self.attention_norm = LlamaRMSNorm(config.hidden_size,
+                                               eps=config.rms_norm_eps)
+        self.ffn_norm = LlamaRMSNorm(config.hidden_size,
+                                         eps=config.rms_norm_eps)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor,
+                                                 torch.FloatTensor]]]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+            attention_mask (`torch.FloatTensor`, *optional*):
+                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+                query_sequence_length, key_sequence_length)` if default attention is used.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+            use_cache (`bool`, *optional*):
+                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                (see `past_key_values`).
+            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+        """
+        if residual is None:
+            residual = hidden_states
+            hidden_states = self.attention_norm(hidden_states)
+        else:
+            hidden_states, residual = self.attention_norm(hidden_states, residual)
+
+        # Self Attention
+        hidden_states, self_attn_weights, present_key_value = self.attention(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            cache_position=cache_position,
+        )
+        # hidden_states = residual + hidden_states
+
+        # Fully Connected
+        # residual = hidden_states
+        hidden_states, residual = self.ffn_norm(hidden_states, residual)
+        # import pdb; pdb.set_trace()
+        hidden_states = self.feed_forward(hidden_states)
+        # hidden_states = residual + hidden_states
+
+        outputs = (hidden_states, residual)
+
+        if output_attentions:
+            outputs += (self_attn_weights, )
+
+        if use_cache:
+            outputs += (present_key_value, )
+
+        return outputs

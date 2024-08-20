@@ -16,7 +16,6 @@ from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,
 LANGUAGE_TOKEN_TYPE = 0
 VISION_TOKEN_TYPE = 1
 
-info_count = 4 * [-1]
 
 # flake8: noqa: F821
 

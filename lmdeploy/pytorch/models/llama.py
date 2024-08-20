@@ -15,6 +15,10 @@ from ..kernels import (fill_kv_cache, fused_rotary_emb, paged_attention_fwd,
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
+import vllm._C.ops as ops
+
 TRANSFORMERS_VERSION = version.parse(transformers.__version__)
 VERSION_4_38_0 = version.parse('4.38.0')
 
@@ -22,11 +26,11 @@ VERSION_4_38_0 = version.parse('4.38.0')
 class LlamaRMSNorm(nn.Module):
     """Rewrite RMSNorm."""
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, residual: torch.Tensor = None):
         """forward."""
         # torch.nn.functional.normalize based implementation might leads
         # to wrong output
-        ret = rms_norm(hidden_states, self.weight, self.variance_epsilon)
+        ret = rms_norm(hidden_states, self.weight, self.variance_epsilon, residual)
 
         return ret
 
@@ -280,31 +284,23 @@ class LlamaAttentionMuxi(nn.Module):
         head_dim = self.head_dim
         hidden_size = num_heads * head_dim
 
-        if not hasattr(self, 'trans_wq'):
-            self.trans_wq = self.q_proj.weight.t().contiguous()
-            self.wq_bias = self.q_proj.bias
-            del self.q_proj
-
-            self.trans_wk = self.k_proj.weight.t().contiguous()
-            self.wk_bias = self.k_proj.bias
-            del self.k_proj
-
-            self.trans_wv = self.v_proj.weight.t().contiguous()
-            self.wv_bias = self.v_proj.bias
-            del self.v_proj
-
         def __qkv_proj(hidden_states):
             """qkv proj."""
-            query_states = torch.matmul(hidden_states, self.trans_wq)
-            if self.wq_bias:
-                query_states = query_states + self.wq_bias
-            key_states = torch.matmul(hidden_states, self.trans_wk)
-            if self.wk_bias:
-                key_states = key_states + self.wk_bias
-            value_states = torch.matmul(hidden_states, self.trans_wv)
-            if self.wv_bias:
-                value_states = value_states + self.wv_bias
-            return query_states, key_states, value_states
+            # query_states = torch.matmul(hidden_states, self.q_proj.weight)
+            # if self.q_proj.bias:
+            #     query_states = query_states + self.q_proj.bias
+            # key_states = torch.matmul(hidden_states, self.k_proj.weight)
+            # if self.k_proj.bias:
+            #     key_states = key_states + self.k_proj.bias
+            # value_states = torch.matmul(hidden_states, self.v_proj.weight)
+            # if self.v_proj.bias:
+            #     value_states = value_states + self.v_proj.bias
+            states = torch.matmul(hidden_states, self.qkv)
+            query_states, key_states, value_states = states.split([4096, 1024, 1024], dim=-1)
+            # import pdb; pdb.set_trace()
+            
+            return query_states.view(-1, num_heads * self.head_dim), key_states.view(-1, num_kv_heads * self.head_dim), value_states.view(-1, num_kv_heads, self.head_dim)
+
 
         def __rotary_emb_fn_old(query_states, key_states, value_states):
             """rotary embedding old."""
@@ -337,32 +333,28 @@ class LlamaAttentionMuxi(nn.Module):
             return query_states, key_states, value_states
 
         def __rotary_emb_fn_438_fused(query_states, key_states, value_states):
-            scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
-            inv_freq = self.rotary_emb.inv_freq
-
+            # import pdb; pdb.set_trace()
+            position_ids_1d = context.position_ids_1d[None]
+            position_ids = position_ids_1d.squeeze(0).unsqueeze(-1)
             if not hasattr(context, 'cos_sin_cache'):
-                position_ids = context.position_ids_1d[None].squeeze(0).unsqueeze(-1)
+                scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
+                inv_freq = self.rotary_emb.inv_freq
                 pos_freq = position_ids / scaling_factor * inv_freq
 
-                cos = torch.cos(pos_freq).view(1, query_states[None].shape[1], -1).repeat(1, 1, 2).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, query_states[None].shape[1], -1).repeat(1, 1, 2).to(query_states.dtype)
+                cos = torch.cos(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
+                sin = torch.sin(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
 
-                new_cos = cos[..., :cos.shape[-1] // 2]
-                new_sin = sin[..., :sin.shape[-1] // 2]
+                context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
-                context.cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
-
+            # import pdb; pdb.set_trace()
             query_states, key_states = fused_rotary_emb(
-                query_states[None],
-                key_states[None],
-                context.position_ids_1d[None],
-                inv_freq=inv_freq,
-                scaling_factor=scaling_factor,
-                out_q=query_states[None],
-                out_k=key_states[None],
+                query_states,
+                key_states,
+                position_ids,
+                head_dim,
                 context=context,
             )
-            return query_states[0], key_states[0], value_states
+            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
 
         def __rotary_emb_fn_438(query_states, key_states, value_states):
             rotary_name = type(self.rotary_emb).__name__
@@ -386,10 +378,7 @@ class LlamaAttentionMuxi(nn.Module):
                                            value_states)
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
-
-        query_states = query_states.view(-1, num_heads, head_dim)
-        key_states = key_states.view(-1, num_kv_heads, head_dim)
-        value_states = value_states.view(-1, num_kv_heads, head_dim)
+        # import pdb; pdb.set_trace()
 
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
@@ -416,23 +405,23 @@ class LlamaAttentionMuxi(nn.Module):
             past_key_value[1],
             attn_output,
             block_offsets,
-            q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
-            max_seqlen=max_q_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
             window_size=None,
             context=context,
         )
         attn_output = attn_output.reshape(*hidden_states.shape[:-1],
                                           hidden_size)
 
-        if not hasattr(self, 'trans_wo'):
-            self.trans_wo = self.o_proj.weight.t().contiguous()
-            self.wo_bias = self.o_proj.bias
-            del self.o_proj
-        attn_output = torch.matmul(attn_output, self.trans_wo)
-        if self.wo_bias:
-            attn_output = attn_output + self.wo_bias
+        # if not hasattr(self, 'trans_wo'):
+        #     self.trans_wo = self.o_proj.weight.t().contiguous()
+        #     self.wo_bias = self.o_proj.bias
+        #     del self.o_proj
+        attn_output = torch.matmul(attn_output, self.o_proj.weight)
+        if self.o_proj.bias:
+            attn_output = attn_output + self.o_proj.bias
 
         return attn_output, None, past_key_value
 
@@ -484,6 +473,7 @@ class LlamaMLP(nn.Module):
         dist.all_reduce(outputs)
         return outputs
 
+
 class LlamaMLPMuxi(nn.Module):
 
     def _load_weights(self, loader, rank: int, world_size: int,
@@ -506,54 +496,97 @@ class LlamaMLPMuxi(nn.Module):
         """Distribution output hook."""
         dist.all_reduce(outputs)
         return outputs
-
+    
+    # @record_function("test_mlp")
     def forward(self, x):
-        if self.config.pretraining_tp > 1:
-            slice = self.intermediate_size // self.config.pretraining_tp
-            gate_proj_slices = self.gate_proj.weight.split(slice, dim=0)
-            up_proj_slices = self.up_proj.weight.split(slice, dim=0)
-            down_proj_slices = self.down_proj.weight.split(slice, dim=1)
+        # w_gate/w_up bias is None for llama3
+        # tmp_w1 = torch.matmul(x, self.trans_wgate)
+        # tmp_act = self.act_fn(tmp_w1)
+        # tmp_w2 = torch.matmul(x, self.trans_wup)
 
-            gate_proj = torch.cat([
-                F.linear(x, gate_proj_slices[i].t().contiguous())
-                for i in range(self.config.pretraining_tp)
-            ],
-                                  dim=-1)
-            up_proj = torch.cat([
-                F.linear(x, up_proj_slices[i].t().contiguous())
-                for i in range(self.config.pretraining_tp)
-            ],
-                                dim=-1)
+        # down_proj = torch.matmul(tmp_act * tmp_w2, self.trans_wdown)
 
-            intermediate_states = (self.act_fn(gate_proj) * up_proj).split(
-                slice, dim=2)
-            down_proj = [
-                F.linear(intermediate_states[i], down_proj_slices[i].t().contiguous())
-                for i in range(self.config.pretraining_tp)
-            ]
-            down_proj = sum(down_proj)
-        else:
-            # w_gate/w_up bias is None for llama3
-            if not hasattr(self, 'trans_wgate'):
-                self.trans_wgate = self.gate_proj.weight.t().contiguous()
-                del self.gate_proj
-            if not hasattr(self, 'trans_wup'):
-                self.trans_wup = self.up_proj.weight.t().contiguous()
-                del self.up_proj
-            if not hasattr(self, 'trans_wdown'):
-                self.trans_wdown = self.down_proj.weight.t().contiguous()
-                del self.down_proj
-            tmp_w1 = torch.matmul(x, self.trans_wgate)
-            tmp_act = self.act_fn(tmp_w1)
-            tmp_w2 = torch.matmul(x, self.trans_wup)
-            tmp_w3 = torch.matmul(x, self.trans_wdown)
+        # down_proj = self.down_proj(
+        #         self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
-            down_proj = torch.matmul(tmp_act * tmp_w2, tmp_w3)
+        t = torch.matmul(x, self.trans_wgate_up)
+        d = t.shape[-1] // 2
+        output_shape = (t.shape[:-1] + (d, ))
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        ops.silu_and_mul(out, t)
+        down_proj = torch.matmul(out, self.down_proj.weight)
 
         return down_proj
 
 
 class LlamaModel(nn.Module):
+
+    def _continuous_batching_forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        """Rewrite implementation of LlamaModel.forward."""
+        output_attentions = False
+        use_cache = True
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        # Attention mask is not necessary in continuous batching
+        attention_mask = None
+
+        hidden_states = inputs_embeds
+        residual = None
+
+        for idx, decoder_layer in enumerate(self.layers):
+
+            past_key_value = past_key_values[idx]
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                residual = residual,
+            )
+            hidden_states, residual = layer_outputs[0], layer_outputs[1]
+
+        hidden_states, _ = self.norm(hidden_states, residual)
+
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values,
+            hidden_states=None,
+            attentions=None,
+        )
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs,
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        """Rewrite of LlamaModel.forward."""
+        return self._continuous_batching_forward(
+            input_ids,
+            position_ids,
+            past_key_values,
+            inputs_embeds,
+        )
+
+
+class LlamaModelQwen(nn.Module):
 
     def _continuous_batching_forward(
         self,

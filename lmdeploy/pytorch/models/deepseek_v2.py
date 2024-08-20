@@ -393,27 +393,35 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
                 cos = context._cos
                 sin = context._sin
 
-            apply_rotary_pos_emb(q_pe,
-                                 k_pe,
-                                 cos,
-                                 sin,
-                                 position_ids,
-                                 context.position_ids_1d,
-                                 q_embed=out_q_pe,
-                                 k_embed=out_k_pe)
+            if not hasattr(context, 'cos_sin_cache'):
+                new_cos = cos.squeeze(-2)
+                new_cos = new_cos[..., :new_cos.shape[-1] // 2]
+                new_sin = sin.squeeze(-2)
+                new_sin = new_sin[..., :new_sin.shape[-1] // 2]
+                cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                context.cos_sin_cache = cos_sin_cache
+            import pdb; pdb.set_trace()
+            out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
+                                                      k_pe,
+                                                      context.position_ids_1d,
+                                                      q_pe.shape[-1],
+                                                      context=context)
+            import pdb; pdb.set_trace()
             return out_q_pe, out_k_pe
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(
             hidden_states)
         nope_size = self.kv_lora_rank
+        import pdb; pdb.set_trace()
         __rotary_emb_fn(q_pe, k_pe, query_states[..., nope_size:],
                         key_states[..., nope_size:])
 
+        import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
-            value_states[..., :0],
+            key_states,
             past_key_value[0],
-            past_key_value[0][..., :0],
+            past_key_value[0],
             q_start_loc,
             q_seq_length,
             kv_seq_length=kv_seq_length,
@@ -421,10 +429,12 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             block_offsets=block_offsets,
             context=context,
         )
+        import pdb; pdb.set_trace()
 
         attn_output = query_states[..., :nope_size]
         block_size = past_key_value[0].size(1)
         shared_kv = block_size >= 64
+        import pdb; pdb.set_trace()
         paged_attention_fwd(
             query_states,
             key_states,
@@ -433,10 +443,10 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             past_key_value[0][..., :nope_size].squeeze(1),
             attn_output,
             block_offsets,
-            q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
-            max_seqlen=max_q_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
             window_size=None,
             context=context,
         )

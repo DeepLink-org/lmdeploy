@@ -216,6 +216,9 @@ class PatchedInternLM2AttentionAscend(nn.Module):
         context = self.context.context
         q_start_loc = context.q_start_loc
         q_seq_length = context.q_seq_length
+        if not hasattr(context, 'q_seq_length_list'):
+            context.q_seq_length_list = q_seq_length.tolist()
+        q_seq_length_list = context.q_seq_length_list
         kv_seq_length = context.kv_seq_length
         block_offsets = context.block_offsets
         max_q_seq_length = context.max_q_seq_length
@@ -308,6 +311,7 @@ class PatchedInternLM2AttentionAscend(nn.Module):
             block_offsets,
             q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
+            q_seqlens_list=q_seq_length_list,
             kv_seqlens=kv_seq_length,
             max_seqlen=max_q_seq_length,
             context=context,

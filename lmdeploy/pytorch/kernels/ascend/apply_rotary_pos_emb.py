@@ -19,8 +19,9 @@ def apply_rotary_pos_emb(
     query_states_reshaped = query_states.reshape(1, bs, head, dim)
     key_states_reshaped = key_states.reshape(1, bs, num_kv_heads, dim)
     if not (hasattr(context, 'cos') or hasattr(context, 'sin')):
-        cos = cos[position_ids_1d].view(1, bs, 1, -1)
-        sin = sin[position_ids_1d].view(1, bs, 1, -1)
+        assert cos.shape[1] == bs and sin.shape[1] == bs
+        cos = cos[:, position_ids_1d].view(1, bs, 1, -1)
+        sin = sin[:, position_ids_1d].view(1, bs, 1, -1)
         if context:
             setattr(context, 'cos', cos)
             setattr(context, 'sin', sin)

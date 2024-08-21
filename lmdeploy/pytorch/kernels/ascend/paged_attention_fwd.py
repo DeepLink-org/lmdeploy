@@ -33,7 +33,7 @@ def flash_context_attention(
                 key=key_states,
                 value=value_states,
                 q_start_loc=q_start_loc[i:i + 1],
-                seq_len_list=q_seq_len[i:i + 1],
+                seq_len_list=q_seq_len_list[i:i + 1],
                 num_q_heads=num_q_heads,
                 num_kv_heads=num_kv_heads,
                 attn_mask=context.attention_mask[i:i + 1],

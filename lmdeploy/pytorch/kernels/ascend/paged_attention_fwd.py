@@ -17,6 +17,7 @@ def flash_context_attention(
     kv_seq_len: Tensor,
     block_size: int,
     kv_cache_len: int,
+    sm_scale: float,
     context=None,
 ):
     num_q_heads, dim = query_states.shape[1:3]
@@ -34,6 +35,7 @@ def flash_context_attention(
                 num_q_heads,
                 num_kv_heads,
                 context.attention_mask[i:i + 1],
+                attn_qk_scale=sm_scale,
                 attn_output=attn_output,
             )
         else:
@@ -52,12 +54,13 @@ def flash_context_attention(
                 num_q_heads,
                 num_kv_heads,
                 context.attention_mask[i:i + 1],
+                attn_qk_scale=sm_scale,
                 attn_output=attn_output,
             )
 
 
 def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
-                          block_offsets, block_size):
+                          block_offsets, block_size, sm_scale):
     num_kv_heads, num_q_heads = k_cache.shape[1], q.shape[1]
     ext_ops.paged_decode_attention(
         q,
@@ -68,7 +71,8 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
         kv_seq_len,
         num_q_heads,
         num_kv_heads,
-        attn_output=attn_output.view(q.shape),
+        attn_qk_scale=sm_scale,
+        attn_output=attn_output,
     )
 
 
@@ -85,13 +89,17 @@ def paged_attention_fwd(
     kv_seqlens: Tensor,
     max_seqlen: int,
     window_size: int = 1,
+    sm_scale: float = None,
+    shared_kv: bool = False,
     context=None,
 ):
+    # if shared_kv:
+        # value_states = key_states[:]
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
-    block_num, block_size, head, dim = key_cache.size()
+    block_num, block_size, head, _ = key_cache.size()
     kv_cache_len = block_num * block_size
-    k = key_cache.reshape(block_num * block_size, head, dim)
-    v = value_cache.reshape(block_num * block_size, head, dim)
+    k = key_cache.reshape(block_num * block_size, head, -1)
+    v = value_cache.reshape(block_num * block_size, head, -1)
     if not is_decoding:
         flash_context_attention(
             query_states,
@@ -106,6 +114,7 @@ def paged_attention_fwd(
             kv_seqlens,
             block_size,
             kv_cache_len,
+            sm_scale,
             context=context,
         )
     else:
@@ -117,4 +126,5 @@ def paged_attention_fwd(
             kv_seqlens,
             block_offsets,
             block_size,
+            sm_scale,
         )

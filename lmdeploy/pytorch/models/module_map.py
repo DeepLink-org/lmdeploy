@@ -416,3 +416,13 @@ ASCEND_MODULE_MAP.update({
     'transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlock':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.qwen2_moe.PatchedQwen2MoeSparseMoeBlockAscend',  # noqa: E501
 })
+
+# ascend deepseek-v2
+ASCEND_MODULE_MAP.update({
+    'modeling_deepseek.DeepseekV2Attention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionAscend',
+    'modeling_deepseek.DeepseekV2FlashAttention2':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionAscend',
+    'modeling_deepseek.DeepseekV2MoE':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoEAscend',
+})

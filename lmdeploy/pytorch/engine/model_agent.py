@@ -146,15 +146,15 @@ def model_forward(
     stream = stream or torch.cuda.current_stream()
     global record_count
     record_count = record_count + 1
-    #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
     # with torch_npu.profiler.profile(
     #     activities=[
     #         torch_npu.profiler.ProfilerActivity.CPU,
-    #         torch_npu.profiler.ProfilerActivity.NPU
+    #         torch_npu.profiler.ProfilerActivity.NPU,
+    #         ProfilerActivity.CUDA,
     #     ],
     #     # on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(profiling_path),
     #     record_shapes=True,
-    #     profile_memory=True,
+    #     profile_memory=False,
     #     with_stack=False,
     #     with_flops=False,
     #     with_modules=False) as prof:

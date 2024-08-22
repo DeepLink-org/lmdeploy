@@ -248,7 +248,7 @@ class LlamaDecoderLayer(nn.Module):
             past_key_value=past_key_value,
             attn_metadata=attn_metadata,
         )
-        
+
         # print('###')
         # import pdb;pdb.set_trace()
         # pass
@@ -312,7 +312,7 @@ class LlamaModel(nn.Module):
                 residual=residual,
                 attn_metadata=attn_metadata,
             )
-            # break
+            break
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states

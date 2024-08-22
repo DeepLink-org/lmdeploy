@@ -15,5 +15,6 @@ def rms_norm(hidden_states: Tensor,
         add = torch.ops.atb.add(hidden_states, residual)
         norm = ext_ops.rms_norm(add, weight, epsilon)
         return (norm, add)
-        # return torch.ops.atb.add_rms_norm(hidden_states, residual, weight, epsilon)
+        # add, _, norm = torch.ops.atb.add_rms_norm(hidden_states, residual, weight, epsilon)
+        # return (norm, add)
         # # return ext_ops.add_rms_norm(hidden_states, residual, weight, epsilon)

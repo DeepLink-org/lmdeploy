@@ -38,23 +38,6 @@ def fused_rotary_emb(
 
     return query_states, key_states
 
-def fused_rotary_emb_op(
-    query_states: Tensor,
-    key_states: Tensor,
-    position_ids: torch.LongTensor,
-    head_dim: int,
-    context=None,
-):
-    # import pdb; pdb.set_trace()
-    ops.rotary_embedding(position_ids,
-                        query_states,
-                        key_states,
-                        head_dim,
-                        context.cos_sin_cache,
-                        True)
-    # import pdb; pdb.set_trace()
-    return query_states, key_states
-
 def fused_rotary_emb_eager(
     query_states: Tensor,
     key_states: Tensor,

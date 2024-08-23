@@ -157,7 +157,6 @@ def _update_model(model: torch.nn.Module):
         _update_model(child)
 
 
-    torch.cuda.empty_cache()
     # trans weights
     if hasattr(model, "weight"):
         if isinstance(model.weight, torch.nn.parameter.Parameter):
@@ -189,7 +188,6 @@ def _update_model(model: torch.nn.Module):
         model.qkv = torch.cat([wq, wk, wv], dim=-1)
         del wq, wk, wv
 
-    torch.cuda.empty_cache()
     if hasattr(model, 'gate_proj') and not hasattr(model, "dense_h_to_4h"):
         model.gate_proj.weight.data = model.gate_proj.weight.data.t().contiguous()
     if hasattr(model, 'up_proj'):
@@ -200,6 +198,18 @@ def _update_model(model: torch.nn.Module):
         model.trans_wgate_up = torch.cat((model.gate_proj.weight, model.up_proj.weight), dim=-1)
         del model.gate_proj
         del model.up_proj
+
+    if hasattr(model, 'wo'):
+        model.wo.weight.data= model.wo.weight.data.t().contiguous()
+    if hasattr(model, 'w1'):
+        model.w1.weight.data = model.w1.weight.data.t().contiguous()
+    if hasattr(model, 'w2'):
+        model.w2.weight.data = model.w2.weight.data.t().contiguous()
+    if hasattr(model, 'w3'):
+        model.w3.weight.data = model.w3.weight.data.t().contiguous()
+    if hasattr(model, 'w1') and hasattr(model, 'w3'):
+        model.trans_w13 = torch.cat((model.w1.weight, model.w3.weight), dim=-1)
+        del model.w1, model.w3
 
     if hasattr(model, 'wqkv'):
         wqkv = model.wqkv.weight.data.t().contiguous()
@@ -215,28 +225,6 @@ def _update_model(model: torch.nn.Module):
         model.wqkv = torch.cat([wq, wk, wv], dim=-1)
         del wq, wk, wv
 
-    if hasattr(model, 'wo'):
-        model.wo.weight.data= model.wo.weight.data.t().contiguous()
-    if hasattr(model, 'w1'):
-        model.w1.weight.data = model.w1.weight.data.t().contiguous()
-    if hasattr(model, 'w2'):
-        model.w2.weight.data = model.w2.weight.data.t().contiguous()
-    if hasattr(model, 'w3'):
-        model.w3.weight.data = model.w3.weight.data.t().contiguous()
-    if hasattr(model, 'w1') and hasattr(model, 'w3'):
-        model.trans_w13 = torch.cat((model.w1.weight, model.w3.weight), dim=-1)
-        del model.w1, model.w3
-
-    # cogvlm language
-    if hasattr(model, 'language_expert_dense'):
-        model.language_expert_dense.weight.data = model.language_expert_dense.weight.data.t().contiguous()
-    if hasattr(model, 'language_expert_query_key_value'):
-        model.language_expert_query_key_value.weight.data = model.language_expert_query_key_value.weight.data.t().contiguous()
-    if hasattr(model, 'vision_expert_dense'):
-        model.vision_expert_dense.weight.data = model.vision_expert_dense.weight.data.t().contiguous()
-    if hasattr(model, 'vision_expert_query_key_value'):
-        model.vision_expert_query_key_value.weight.data = model.vision_expert_query_key_value.weight.data.t().contiguous()
-    
     # cogvlm visual
     if hasattr(model, "query_key_value"):
         model.query_key_value.weight.data = model.query_key_value.weight.data.t().contiguous()
@@ -255,6 +243,16 @@ def _update_model(model: torch.nn.Module):
         model.gate_dense_weight = torch.cat((model.gate_proj.weight, model.dense_h_to_4h.weight), dim=-1)
     if hasattr(model, "dense_4h_to_h"):
         model.dense_4h_to_h.weight.data = model.dense_4h_to_h.weight.data.t().contiguous()
+
+    # cogvlm language
+    if hasattr(model, 'language_expert_dense'):
+        model.language_expert_dense.weight.data = model.language_expert_dense.weight.data.t().contiguous()
+    if hasattr(model, 'language_expert_query_key_value'):
+        model.language_expert_query_key_value.weight.data = model.language_expert_query_key_value.weight.data.t().contiguous()
+    if hasattr(model, 'vision_expert_dense'):
+        model.vision_expert_dense.weight.data = model.vision_expert_dense.weight.data.t().contiguous()
+    if hasattr(model, 'vision_expert_query_key_value'):
+        model.vision_expert_query_key_value.weight.data = model.vision_expert_query_key_value.weight.data.t().contiguous()
 
     if hasattr(model, '_update_model_fn'):
         model._update_model_fn()

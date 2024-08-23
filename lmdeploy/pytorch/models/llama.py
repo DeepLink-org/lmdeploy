@@ -10,7 +10,7 @@ from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ..kernels import apply_rotary_pos_emb as apply_rotary_pos_emb_old
-from ..kernels import (fill_kv_cache, fused_rotary_emb, paged_attention_fwd,
+from ..kernels import (fill_kv_cache, apply_rotary_pos_emb, fused_rotary_emb, fused_rotary_emb_eager, paged_attention_fwd,
                        rms_norm)
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
@@ -33,22 +33,6 @@ class LlamaRMSNorm(nn.Module):
         ret = rms_norm(hidden_states, self.weight, self.variance_epsilon, residual)
 
         return ret
-
-
-def rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., :x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2:]
-    return torch.cat((-x2, x1), dim=-1)
-
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
-    """Applies Rotary Position Embedding to the query and key tensors."""
-    cos = cos.unsqueeze(unsqueeze_dim)
-    sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
 
 
 class LlamaAttention(nn.Module):
@@ -286,17 +270,17 @@ class LlamaAttentionMuxi(nn.Module):
 
         def __qkv_proj(hidden_states):
             """qkv proj."""
-            # query_states = torch.matmul(hidden_states, self.q_proj.weight)
-            # if self.q_proj.bias:
-            #     query_states = query_states + self.q_proj.bias
-            # key_states = torch.matmul(hidden_states, self.k_proj.weight)
-            # if self.k_proj.bias:
-            #     key_states = key_states + self.k_proj.bias
-            # value_states = torch.matmul(hidden_states, self.v_proj.weight)
-            # if self.v_proj.bias:
-            #     value_states = value_states + self.v_proj.bias
-            states = torch.matmul(hidden_states, self.qkv)
-            query_states, key_states, value_states = states.split([4096, 1024, 1024], dim=-1)
+            query_states = torch.matmul(hidden_states, self.q_proj.weight)
+            if self.q_proj.bias:
+                query_states = query_states + self.q_proj.bias
+            key_states = torch.matmul(hidden_states, self.k_proj.weight)
+            if self.k_proj.bias:
+                key_states = key_states + self.k_proj.bias
+            value_states = torch.matmul(hidden_states, self.v_proj.weight)
+            if self.v_proj.bias:
+                value_states = value_states + self.v_proj.bias
+            # states = torch.matmul(hidden_states, self.qkv)
+            # query_states, key_states, value_states = states.split([4096, 1024, 1024], dim=-1)
             # import pdb; pdb.set_trace()
             
             return query_states.view(-1, num_heads * self.head_dim), key_states.view(-1, num_kv_heads * self.head_dim), value_states.view(-1, num_kv_heads, self.head_dim)
@@ -332,28 +316,41 @@ class LlamaAttentionMuxi(nn.Module):
                 query_states, key_states, cos, sin)
             return query_states, key_states, value_states
 
-        def __rotary_emb_fn_438_fused(query_states, key_states, value_states):
-            # import pdb; pdb.set_trace()
+        def __rotary_emb_fn_438_fused(query_states, key_states, value_states, is_decodings):
             position_ids_1d = context.position_ids_1d[None]
             position_ids = position_ids_1d.squeeze(0).unsqueeze(-1)
+
             if not hasattr(context, 'cos_sin_cache'):
                 scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
                 inv_freq = self.rotary_emb.inv_freq
                 pos_freq = position_ids / scaling_factor * inv_freq
-
-                cos = torch.cos(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
-                sin = torch.sin(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
-
+                if is_decoding:
+                    cos = torch.cos(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
+                    sin = torch.sin(pos_freq).view(1, position_ids.shape[0], -1).to(query_states.dtype)
+                else:
+                    cos = torch.cos(pos_freq).view(1, position_ids.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                    sin = torch.sin(pos_freq).view(1, position_ids.shape[0], -1).repeat(1, 1, 2).to(query_states.dtype)
+                context.cos = cos
+                context.sin = sin
                 context.cos_sin_cache = torch.cat((cos, sin), dim=-1)
 
             # import pdb; pdb.set_trace()
-            query_states, key_states = fused_rotary_emb(
-                query_states,
-                key_states,
-                position_ids,
-                head_dim,
-                context=context,
-            )
+            if is_decoding:
+                query_states, key_states = apply_rotary_pos_emb(
+                    query_states,
+                    key_states,
+                    position_ids,
+                    head_dim,
+                    context=context,
+                )
+            else:
+                query_states, key_states = fused_rotary_emb_eager(
+                    query_states[None],
+                    key_states[None],
+                    position_ids,
+                    head_dim,
+                    context=context,
+                )
             return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
 
         def __rotary_emb_fn_438(query_states, key_states, value_states):
@@ -378,10 +375,20 @@ class LlamaAttentionMuxi(nn.Module):
                                            value_states)
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
-        # import pdb; pdb.set_trace()
 
-        query_states, key_states, value_states = __rotary_emb_fn(
-            query_states, key_states, value_states)
+        is_decoding = query_states.shape[1] == 1
+
+        if is_decoding:
+            query_states = query_states.reshape(-1, num_heads * head_dim)
+            key_states = key_states.reshape(-1, num_kv_heads * head_dim)
+        else:
+            query_states = query_states.reshape(-1, num_heads, head_dim)
+            key_states = key_states.reshape(-1, num_kv_heads, head_dim)
+
+        value_states = value_states.reshape(-1, num_kv_heads, head_dim)
+
+        query_states, key_states, value_states = __rotary_emb_fn_438_fused(
+            query_states, key_states, value_states, is_decoding)
 
         fill_kv_cache(
             key_states,
@@ -396,7 +403,7 @@ class LlamaAttentionMuxi(nn.Module):
             context=context,
         )
 
-        attn_output = query_states
+        attn_output = torch.empty_like(query_states)
         paged_attention_fwd(
             query_states,
             key_states,
@@ -415,10 +422,6 @@ class LlamaAttentionMuxi(nn.Module):
         attn_output = attn_output.reshape(*hidden_states.shape[:-1],
                                           hidden_size)
 
-        # if not hasattr(self, 'trans_wo'):
-        #     self.trans_wo = self.o_proj.weight.t().contiguous()
-        #     self.wo_bias = self.o_proj.bias
-        #     del self.o_proj
         attn_output = torch.matmul(attn_output, self.o_proj.weight)
         if self.o_proj.bias:
             attn_output = attn_output + self.o_proj.bias
@@ -497,18 +500,19 @@ class LlamaMLPMuxi(nn.Module):
         dist.all_reduce(outputs)
         return outputs
     
-    # @record_function("test_mlp")
     def forward(self, x):
         # w_gate/w_up bias is None for llama3
-        # tmp_w1 = torch.matmul(x, self.trans_wgate)
-        # tmp_act = self.act_fn(tmp_w1)
-        # tmp_w2 = torch.matmul(x, self.trans_wup)
-
-        # down_proj = torch.matmul(tmp_act * tmp_w2, self.trans_wdown)
-
+        # origin impl
         # down_proj = self.down_proj(
         #         self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
+        # transpose impl
+        # tmp_w1 = torch.matmul(x, self.trans_wgate)
+        # tmp_act = self.act_fn(tmp_w1)
+        # tmp_w2 = torch.matmul(x, self.trans_wup)
+        # down_proj = torch.matmul(tmp_act * tmp_w2, self.trans_wdown)
+
+        # fused impl
         t = torch.matmul(x, self.trans_wgate_up)
         d = t.shape[-1] // 2
         output_shape = (t.shape[:-1] + (d, ))

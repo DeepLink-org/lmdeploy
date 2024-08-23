@@ -13,9 +13,9 @@ if __name__ == "__main__":
                                                                  cache_max_entry_count=0.4))
     # question = ["How are you?", "Please introduce China.", "Introduce Shanghai AI Lab"]
     # question = ["Please introduce China.", "How are you?"]
-    # question = ["Please introduce Shanghai."]
+    question = ["Please introduce Shanghai."]
     # question = ["Shanghai is"]
-    question = ["Hello, my name is"]
+    # question = ["Hello, my name is"]
     response = pipe(question, do_preprocess=True)
     for idx, r in enumerate(response):
         print(f"Q: {question[idx]}")

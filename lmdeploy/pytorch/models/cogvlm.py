@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
-from ..kernels import fill_kv_cache, apply_rotary_pos_emb, fused_rotary_emb, fused_rotary_emb_op, fused_rotary_emb_eager, paged_attention_fwd, paged_attention_fwd_prefill
+from ..kernels import fill_kv_cache, apply_rotary_pos_emb, fused_rotary_emb, fused_rotary_emb_eager, paged_attention_fwd, paged_attention_fwd_prefill
 from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,
                                         rowwise_parallelize_linear)
 
@@ -408,7 +408,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
-        is_decoding = query_states.shape[1] == 1
+        is_decoding = False
+        # is_decoding = query_states.shape[1] == 1
         
         if is_decoding:
             query_states = query_states.reshape(-1, num_heads * head_dim)
@@ -436,7 +437,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         )
 
         if True:
-            context_layer = query_states
+            # context_layer = query_states
+            context_layer = torch.empty_like(query_states)
             paged_attention_fwd(
                 query_states,
                 key_states,

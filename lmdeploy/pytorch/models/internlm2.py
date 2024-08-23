@@ -245,7 +245,7 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             kv_dim_size = self.wqkv.shape[-1] // (self.num_key_value_groups + 2)
             q_dim_size = kv_dim_size * self.num_key_value_groups
             query_states, key_states, value_states = qkv_states.split([q_dim_size, kv_dim_size, kv_dim_size], dim=-1)
-            return query_states, key_states, value_states.view(-1, num_kv_heads, self.head_dim)
+            return query_states, key_states, value_states.view(-1, num_kv_heads, head_dim)
 
         def __rotary_emb_fn(query_states, key_states, value_states):
             """rotary embedding func."""
@@ -282,10 +282,11 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                 query_states,
                 key_states,
                 _position_ids_1d,
-                self.head_dim,
+                head_dim,
                 context=context,
             )
-            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
+
+            return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
 
         query_states, key_states, value_states = __qkv_proj(hidden_states)
 
@@ -314,8 +315,9 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
                 else:
                     pickle.dump(x, f)
 
-        attn_output = query_states
-        # import pdb; pdb.set_trace()
+        # if query_states.shape[0] > 3:
+        #     import pdb; pdb.set_trace()
+        attn_output = torch.empty_like(query_states)
         paged_attention_fwd(
             query_states,
             key_states,
@@ -574,7 +576,6 @@ class PatchedInternLM2DecoderLayerMuxi(nn.Module):
         # Fully Connected
         # residual = hidden_states
         hidden_states, residual = self.ffn_norm(hidden_states, residual)
-        # import pdb; pdb.set_trace()
         hidden_states = self.feed_forward(hidden_states)
         # hidden_states = residual + hidden_states
 

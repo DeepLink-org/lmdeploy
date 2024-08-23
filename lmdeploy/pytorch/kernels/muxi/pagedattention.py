@@ -171,6 +171,13 @@ def paged_attention_fwd(
         ))
     else:
         block_num, head, block_size, dim = value_cache.size()
+        # import pdb; pdb.set_trace()
+        # block_tables = []
+        # for i in range(batch):
+        #     actual_block_num = kv_seqlens[i].item() // block_size + 1
+        #     block_tables.append(block_offsets[i][:actual_block_num])
+        # block_tables = torch.stack(block_tables)
+        # import pdb; pdb.set_trace()
         vllm_ops.ops.paged_attention_v1(
             attn_output,
             query_states,
@@ -185,3 +192,22 @@ def paged_attention_fwd(
             None,
             'auto',
         )
+        # import pdb; pdb.set_trace()
+        # batch = query_states.shape[0]
+        # for i in range(batch):
+        #     vllm_ops.ops.paged_attention_v1(
+        #         attn_output[i:i+1],
+        #         query_states[i:i+1],
+        #         key_cache,
+        #         value_cache,
+        #         head,
+        #         float(1 / math.sqrt(dim)), # scale
+        #         block_offsets[i:i+1],
+        #         kv_seqlens[i:i+1],
+        #         block_size,
+        #         max_kv_seq_length,
+        #         None,
+        #         'auto',
+        #     )
+        # import pdb; pdb.set_trace()
+        # pass

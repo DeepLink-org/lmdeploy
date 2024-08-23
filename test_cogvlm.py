@@ -14,9 +14,8 @@ if __name__ == '__main__':
     pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
 
     #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
-    #response = pipe(('describe this image', image))
-
-    # print(response)
+    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
+    image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
 
     prompts = [
         {
@@ -28,27 +27,45 @@ if __name__ == '__main__':
         }
     ]
 
-    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
-    # image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
+    # warm up
+    # response = pipe("How are you?")
+    # print(response)
 
-    # response = pipe(('describe', image), do_preprocess=True)
-    # response = pipe(('describe', image1), do_preprocess=True)
-    # response = pipe(prompts, do_preprocess=True)
+    # response = pipe(("describe the image:", image))
+    # print(response)
 
-    response = pipe(('What functions do you have?'), do_preprocess=True)
-    print(response)
-    # # raise ValueError("test")
 
-    response = pipe(('How are you?'), do_preprocess=True)
-    print(response)
+    # question = ["How are you?"]
+    # question = ["Please introduce Shanghai."]
+    # test multi batch
+    question = ["How are you?", "Please introduce Shanghai."]
+    response = pipe(question)
+    for idx, r in enumerate(response):
+        print(f"batch_{idx}:")
+        print(f"Q: {question[idx]}")
+        print(f"A: {r.text}")
+        print()
 
-    # # response = pipe(prompts, do_preprocess=True)
-    response = pipe(('describe', image), do_preprocess=True)
-    print(response)
+    # test image
+    question = [("describe the image:", image)]
+    response = pipe(question)
+    for idx, r in enumerate(response):
+        print(f"Q: {question[idx]}")
+        print(f"A: {r.text}")
+        print()
 
-    # sess = pipe.chat('What is the woman doing?')
+    # question = ["How are you?", "How are you?"]
+    # question = ["How are you?", "Please introduce Shanghai."]
+    # response = pipe(question)
+    # for idx, r in enumerate(response):
+    #     print(f"batch_{idx}:")
+    #     print(f"Q: {question[idx]}")
+    #     print(f"A: {r.text}")
+    #     print()
+
+    # TODO: support session later
+    # sess = pipe.chat("I am living in shanghai!")
     # print("############1: ", sess)
-    # sess = pipe.chat(("please describe this image.", image), session=sess)
+    # # import pdb; pdb.set_trace()
+    # sess = pipe.chat("please introduce my city", session=sess)
     # print("############2: ", sess)
-
-    raise ValueError("test")

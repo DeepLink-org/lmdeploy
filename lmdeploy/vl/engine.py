@@ -112,9 +112,9 @@ class ImageEncoder:
         # record_count = record_count + 1
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
         if True:
-            # with record_function("model_forward_vit"):
-            outputs = self.model.forward(inputs)
-        # prof.export_chrome_trace(f"/home/pujiang/zhousl/cogvlm_timeline_vit/cogvlm_forward_{record_count}.json")
+            with record_function("model_forward_vit"):
+                outputs = self.model.forward(inputs)
+        # prof.export_chrome_trace(f"/home/pujiang/zhousl/timeline_vit/vit_{record_count}.json")
         if isinstance(outputs[0], torch.Tensor):
             outputs = [x.cpu() for x in outputs]
         time_end = time.perf_counter()

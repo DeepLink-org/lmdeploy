@@ -29,11 +29,16 @@ if __name__ == '__main__':
     ]
 
     # warm up
-    # response = pipe("How are you?")
+    # response = pipe("How are you?", top_k=1)
+    # print(response)
+    # response = pipe("How are you?", top_k=1)
     # print(response)
 
-    # response = pipe(("describe the image:", image))
+    # response = pipe(("describe the image:", image), top_k=1)
     # print(response)
+    # response = pipe(("describe the image:", image), top_k=1)
+    # print(response)
+    # raise ValueError("test")
 
     # question = ["How are you?"]
     # question = ["Please introduce Shanghai."]

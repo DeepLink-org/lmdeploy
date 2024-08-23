@@ -513,7 +513,7 @@ def model_forward(
                     use_origin=False,
                     context=context,
                 )
-        # prof.export_chrome_trace(f"/home/pujiang/zhousl/cogvlm_timeline/cogvlm_forward_{record_count}.json")
+        # prof.export_chrome_trace(f"/home/pujiang/zhousl/timeline/forward_{record_count}.json")
 
     return dict(logits=output['logits'], custom_outputs=context._outputs)
 

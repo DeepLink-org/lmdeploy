@@ -224,7 +224,6 @@ class PatchedVisionExpertAttention(nn.Module):
         q_seq_length = context.q_seq_length
         kv_seq_length = context.kv_seq_length
         block_offsets = context.block_offsets
-        q_seq_length_list = context.q_seq_length_list
         max_q_seq_length = context.max_q_seq_length
         num_heads = self.config.num_attention_heads // world_size
         num_kv_heads = getattr(self.config, 'num_multi_query_heads',
@@ -317,7 +316,6 @@ class PatchedVisionExpertAttention(nn.Module):
             block_offsets,
             q_start_loc=q_start_loc,
             q_seqlens=q_seq_length,
-            q_seqlens_list=q_seq_length_list,
             kv_seqlens=kv_seq_length,
             max_seqlen=max_q_seq_length,
             context=self.context.context
@@ -414,7 +412,6 @@ class PatchedVisionExpertAttentionAscend(nn.Module):
         q_seq_length = context.q_seq_length
         kv_seq_length = context.kv_seq_length
         block_offsets = context.block_offsets
-        q_seq_length_list = context.q_seq_length_list
         max_q_seq_length = context.max_q_seq_length
         num_heads = self.config.num_attention_heads // world_size
         num_kv_heads = getattr(self.config, 'num_multi_query_heads',
@@ -611,9 +608,6 @@ def _get_cogvlm_position_ids(context):
     """get cogvlm position_ids."""
     inputs = context.inputs
     q_seq_length = inputs.seq_length
-
-    # avoid duplicated seq_len tolist
-    context.q_seq_length_list = q_seq_length.tolist()
     vision_input_info = inputs.vision_inputs
     position_id_offsets = vision_input_info.history_image_token_lengths - vision_input_info.history_image_nums * 3
     if inputs.is_decoding:

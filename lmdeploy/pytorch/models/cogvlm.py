@@ -3,7 +3,6 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
-import dlinfer.ops as ext_ops
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb
@@ -189,14 +188,11 @@ class PatchedVisionExpertAttention(nn.Module):
             kv_seq_length=kv_seq_length,
             max_q_seq_length=max_q_seq_length,
             block_offsets=block_offsets,
-            context=self.context.context
         )
 
         context_layer = query_states
         paged_attention_fwd(
             query_states,
-            key_states,
-            value_states,
             past_key_value[0],
             past_key_value[1],
             context_layer,
@@ -205,7 +201,6 @@ class PatchedVisionExpertAttention(nn.Module):
             q_seqlens=q_seq_length,
             kv_seqlens=kv_seq_length,
             max_seqlen=max_q_seq_length,
-            context=self.context.context
         )
         context_layer = context_layer.reshape(*hidden_states.shape[:-1], -1)
 
@@ -423,8 +418,8 @@ class PatchedCogVLMModel(nn.Module):
         if vision_embeddings is not None and len(vision_embeddings) > 0:
             # multi-modality
             inputs_embeds[:,
-                    vision_embedding_indexing, :] = vision_embeddings.to(
-                        inputs_embeds)
+                          vision_embedding_indexing, :] = vision_embeddings.to(
+                              inputs_embeds)
         hidden_states = inputs_embeds
 
         for idx, decoder_layer in enumerate(self.layers):
@@ -483,7 +478,6 @@ def _get_cogvlm_position_ids(context):
             ends = starts + q_seq_length
             token_type_ids = vision_input_info.input_embedding_indexing.to(
                 torch.int)
-            
             history_position_lengths = vision_input_info.history_lengths - position_id_offsets
             position_ids_all = history_position_lengths[:,
                                                         None] + build_position_ids(

@@ -5,11 +5,11 @@ import torch
 import torch.distributed as dist
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb
-from lmdeploy.pytorch.kernels.ascend.paged_attention_fwd import paged_attention_fwd
-from lmdeploy.pytorch.kernels.ascend.fill_kv_cache import fill_kv_cache
-from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb
+from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb_ascend
+from lmdeploy.pytorch.kernels.ascend.paged_attention_fwd import paged_attention_fwd_ascend
+from lmdeploy.pytorch.kernels.ascend.fill_kv_cache import fill_kv_cache_ascend
 
+from ..kernels import fill_kv_cache, fused_rotary_emb, paged_attention_fwd
 from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,
                                         rowwise_parallelize_linear)
 
@@ -310,7 +310,7 @@ class PatchedVisionExpertAttentionAscend(nn.Module):
             scaling_factor = getattr(self.rotary_emb, 'scaling_factor', 1.0)
             inv_freq = self.rotary_emb.inv_freq
 
-            query_states, key_states = fused_rotary_emb(
+            query_states, key_states = fused_rotary_emb_ascend(
                 query_states[None],
                 key_states[None],
                 position_ids[None],
@@ -330,7 +330,7 @@ class PatchedVisionExpertAttentionAscend(nn.Module):
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
 
-        fill_kv_cache(
+        fill_kv_cache_ascend(
             key_states,
             value_states,
             past_key_value[0],
@@ -344,7 +344,7 @@ class PatchedVisionExpertAttentionAscend(nn.Module):
         )
 
         context_layer = query_states
-        paged_attention_fwd(
+        paged_attention_fwd_ascend(
             query_states,
             key_states,
             value_states,

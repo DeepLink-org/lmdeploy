@@ -393,8 +393,6 @@ ASCEND_MODULE_MAP.update({
 
 # ascend cogvlm
 ASCEND_MODULE_MAP.update({
-    'modeling_cogvlm.VisionExpertMLP':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertMLPAscend',
     'modeling_cogvlm.VisionExpertAttention':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionAscend',
 })

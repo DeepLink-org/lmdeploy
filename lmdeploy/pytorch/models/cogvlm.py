@@ -5,9 +5,9 @@ import torch
 import torch.distributed as dist
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
-from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb_ascend
-from lmdeploy.pytorch.kernels.ascend.paged_attention_fwd import paged_attention_fwd_ascend
-from lmdeploy.pytorch.kernels.ascend.fill_kv_cache import fill_kv_cache_ascend
+from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb as fused_rotary_emb_ascend
+from lmdeploy.pytorch.kernels.ascend.paged_attention_fwd import paged_attention_fwd as paged_attention_fwd_ascend
+from lmdeploy.pytorch.kernels.ascend.fill_kv_cache import fill_kv_cache as fill_kv_cache_ascend
 
 from ..kernels import fill_kv_cache, fused_rotary_emb, paged_attention_fwd
 from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,

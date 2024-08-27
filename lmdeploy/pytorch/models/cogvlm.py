@@ -8,14 +8,13 @@ from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from lmdeploy.pytorch.kernels.ascend.fused_rotary_emb import fused_rotary_emb
 from lmdeploy.pytorch.kernels.ascend.paged_attention_fwd import paged_attention_fwd
+from lmdeploy.pytorch.kernels.ascend.fill_kv_cache import fill_kv_cache
 
-from ..kernels import fill_kv_cache
 from ..weight_loader.dist_utils import (colwise_split_parallelize_linear,
                                         rowwise_parallelize_linear)
 
 LANGUAGE_TOKEN_TYPE = 0
 VISION_TOKEN_TYPE = 1
-
 
 # flake8: noqa: F821
 
@@ -173,39 +172,6 @@ class PatchedVisionExpertMLPAscend(nn.Module):
 
 class PatchedVisionExpertAttention(nn.Module):
 
-    def _load_weights(self, loader, rank: int, world_size: int,
-                      device: torch.device):
-        """load weights."""
-        num_heads = self.config.num_attention_heads
-        num_kv_heads = getattr(self.config, 'num_multi_query_heads', num_heads)
-        head_dim = self.config.hidden_size // num_heads
-        sections = [
-            self.config.hidden_size, num_kv_heads * head_dim,
-            num_kv_heads * head_dim
-        ]
-        for name in [
-                'vision_expert_query_key_value',
-                'language_expert_query_key_value'
-        ]:
-            colwise_split_parallelize_linear(getattr(self, name),
-                                             sections,
-                                             loader,
-                                             rank=rank,
-                                             world_size=world_size,
-                                             prefix=name)
-        for name in ['vision_expert_dense', 'language_expert_dense']:
-            rowwise_parallelize_linear(getattr(self, name),
-                                       loader,
-                                       rank=rank,
-                                       world_size=world_size,
-                                       prefix=name)
-
-    @classmethod
-    def _distribute_output_fn(cls, outputs, **kwargs):
-        """Distribution output hook."""
-        dist.all_reduce(outputs[0])
-        return outputs
-
     def _contiguous_batching_forward_impl(
         self,
         hidden_states: torch.Tensor,
@@ -361,39 +327,6 @@ class PatchedVisionExpertAttention(nn.Module):
 
 class PatchedVisionExpertAttentionAscend(nn.Module):
 
-    def _load_weights(self, loader, rank: int, world_size: int,
-                      device: torch.device):
-        """load weights."""
-        num_heads = self.config.num_attention_heads
-        num_kv_heads = getattr(self.config, 'num_multi_query_heads', num_heads)
-        head_dim = self.config.hidden_size // num_heads
-        sections = [
-            self.config.hidden_size, num_kv_heads * head_dim,
-            num_kv_heads * head_dim
-        ]
-        for name in [
-                'vision_expert_query_key_value',
-                'language_expert_query_key_value'
-        ]:
-            colwise_split_parallelize_linear(getattr(self, name),
-                                             sections,
-                                             loader,
-                                             rank=rank,
-                                             world_size=world_size,
-                                             prefix=name)
-        for name in ['vision_expert_dense', 'language_expert_dense']:
-            rowwise_parallelize_linear(getattr(self, name),
-                                       loader,
-                                       rank=rank,
-                                       world_size=world_size,
-                                       prefix=name)
-
-    @classmethod
-    def _distribute_output_fn(cls, outputs, **kwargs):
-        """Distribution output hook."""
-        dist.all_reduce(outputs[0])
-        return outputs
-
     def _contiguous_batching_forward_impl(
         self,
         hidden_states: torch.Tensor,
@@ -479,12 +412,13 @@ class PatchedVisionExpertAttentionAscend(nn.Module):
         query_states, key_states, value_states = __rotary_emb_fn(
             query_states, key_states, value_states)
 
-        ext_ops.fill_kv_cache(
+        fill_kv_cache(
             key_states,
             value_states,
             past_key_value[0],
             past_key_value[1],
-            self.context.context.kv_start_indices
+            None, None, None, None, None,
+            self.context.context
         )
 
         context_layer = query_states

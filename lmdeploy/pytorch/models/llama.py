@@ -512,6 +512,15 @@ class LlamaModel(nn.Module):
         **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """Rewrite of LlamaModel.forward."""
+        # import torch_npu
+        # with torch_npu.profiler.profile(
+        #         activities=[
+        #             torch_npu.profiler.ProfilerActivity.CPU,
+        #             torch_npu.profiler.ProfilerActivity.NPU
+        #             ],
+        #         on_trace_ready=torch_npu.profiler.tensorboard_trace_handler("/data2/yaofengchen/workspaces/lmdeploy_InferExt/demo/profile"), 
+        #         # with_stack=True,
+        #         ):
         return self._continuous_batching_forward(
             input_ids,
             position_ids,

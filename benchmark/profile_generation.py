@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import dlinfer
 import argparse
 import csv
 import os
@@ -421,6 +422,7 @@ def main():
                     block_size=args.cache_block_seq_len,
                     session_len=session_len,
                     tp=args.tp,
+                    device_type='ascend',
                     thread_safe=True,
                     enable_prefix_caching=args.enable_prefix_caching,
                 )

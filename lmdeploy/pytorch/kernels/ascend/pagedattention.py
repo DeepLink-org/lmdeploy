@@ -73,7 +73,7 @@ def prefill_attention(
     batch, head, dim = q_start_loc.shape[0], query_states.shape[1], query_states.shape[2]
     numKeyValueHeads = key_states.shape[1]
     assert key_states.shape[1] == value_states.shape[1]
-    scale = 1 / math.sqrt(dim)
+    # scale = 1 / math.sqrt(dim)
     for i in range(batch):
         start = q_start_loc[i]
         end = start + q_seq_len[i]
@@ -92,7 +92,7 @@ def prefill_attention(
         #     print(f"cache mask in context attention, seqLen:{single_seq_len}")
         mask = context.attention_mask[i]
 
-        attn_weights = torch.matmul(single_q, single_k.transpose(-2, -1)) / scale
+        attn_weights = torch.matmul(single_q, single_k.transpose(-2, -1)) / math.sqrt(dim)
         if mask is not None:
             attn_weights += mask.unsqueeze(0)
 

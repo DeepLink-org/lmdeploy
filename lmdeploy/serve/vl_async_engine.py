@@ -123,7 +123,8 @@ class VLAsyncEngine(AsyncEngine):
         sess = super().chat(_prompts, **kwargs)
 
         # recover prompts & history
-        sess._prompt = prompts
-        last_round = sess.history[-1]
-        sess.history[-1] = (prompts, last_round[-1])
+        # sess._prompt = prompts
+        # last_round = sess.history[-1]
+        # sess.history[-1] = (prompts, last_round[-1])
+
         return sess

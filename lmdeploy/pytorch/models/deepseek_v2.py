@@ -9,7 +9,7 @@ from torch import nn
 from lmdeploy.pytorch.kernels.fused_moe import fused_moe
 
 from ..kernels import (apply_rotary_pos_emb, fill_kv_cache,
-                       paged_attention_fwd, rms_norm)
+                       paged_attention_fwd_prefill, paged_attention_fwd, rms_norm)
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
@@ -400,23 +400,23 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
                 new_sin = new_sin[..., :new_sin.shape[-1] // 2]
                 cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
                 context.cos_sin_cache = cos_sin_cache
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
                                                       k_pe,
                                                       context.position_ids_1d,
                                                       q_pe.shape[-1],
                                                       context=context)
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             return out_q_pe, out_k_pe
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(
             hidden_states)
         nope_size = self.kv_lora_rank
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         __rotary_emb_fn(q_pe, k_pe, query_states[..., nope_size:],
                         key_states[..., nope_size:])
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         fill_kv_cache(
             key_states,
             key_states,
@@ -429,27 +429,50 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             block_offsets=block_offsets,
             context=context,
         )
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
-        attn_output = query_states[..., :nope_size]
+        # attn_output = query_states[..., :nope_size]
+        # attn_output = torch.empty_like(query_states[..., :nope_size])
+
         block_size = past_key_value[0].size(1)
         shared_kv = block_size >= 64
-        import pdb; pdb.set_trace()
-        paged_attention_fwd(
-            query_states,
-            key_states,
-            value_states,
-            past_key_value[0],
-            past_key_value[0][..., :nope_size].squeeze(1),
-            attn_output,
-            block_offsets,
-            q_seqlens=q_seq_length,
-            kv_seqlens=kv_seq_length,
-            max_q_seq_length=max_q_seq_length,
-            max_kv_seq_length=max_kv_seq_length,
-            window_size=None,
-            context=context,
-        )
+        # import pdb; pdb.set_trace()
+
+        attn_output = torch.empty_like(query_states[..., :nope_size])
+        is_decoding = query_states.shape[0] == 1
+
+        if is_decoding:
+            import pdb; pdb.set_trace()
+            paged_attention_fwd(
+                query_states,
+                key_states,
+                value_states,
+                past_key_value[0],
+                past_key_value[0][..., :nope_size],
+                attn_output,
+                block_offsets,
+                q_seqlens=q_seq_length,
+                kv_seqlens=kv_seq_length,
+                max_q_seq_length=max_q_seq_length,
+                max_kv_seq_length=max_kv_seq_length,
+                window_size=None,
+                context=context,
+            )
+        else:
+            attn_output = paged_attention_fwd_prefill(
+                query_states,
+                key_states,
+                value_states,
+                past_key_value[0],
+                past_key_value[0][..., :nope_size],
+                block_offsets,
+                q_seqlens=q_seq_length,
+                kv_seqlens=kv_seq_length,
+                max_q_seq_length=max_q_seq_length,
+                max_kv_seq_length=max_kv_seq_length,
+                window_size=None,
+                context=context,
+            )
 
         # (num_heads, q_len, v_head_dim)
         attn_bmm_out = attn_output.new_empty(q_len, num_heads, self.v_head_dim)

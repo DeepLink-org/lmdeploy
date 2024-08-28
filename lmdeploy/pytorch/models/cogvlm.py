@@ -343,8 +343,9 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 # mixed_raw_layer = self.language_expert_query_key_value(
                     # hidden_states)
                 mixed_raw_layer = torch.matmul(hidden_states, self.language_expert_query_key_value.weight.data)
+                if self.language_expert_query_key_value.bias is not None:
+                    mixed_raw_layer = mixed_raw_layer + self.language_expert_query_key_value.bias
             else:
-                # import pdb; pdb.set_trace()
                 shape = list(hidden_states.shape)
                 shape[-1] = hidden_size + head_dim * num_kv_heads * 2
                 mixed_raw_layer = torch.empty(shape,
@@ -359,7 +360,12 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
                 #                     hidden_states[:, language_token_mask, :])
 
                 mixed_raw_layer[:,vision_token_mask, :] = torch.matmul(hidden_states[:, vision_token_mask, :], self.vision_expert_query_key_value.weight.data)
+                if self.vision_expert_query_key_value.bias is not None:
+                    mixed_raw_layer[:,vision_token_mask, :] = mixed_raw_layer[:,vision_token_mask, :] + self.vision_expert_query_key_value.bias
                 mixed_raw_layer[:,language_token_mask, :] = torch.matmul(hidden_states[:, language_token_mask, :], self.language_expert_query_key_value.weight.data)
+                if self.language_expert_query_key_value.bias is not None:
+                    mixed_raw_layer[:,language_token_mask, :] = mixed_raw_layer[:,language_token_mask, :] + self.language_expert_query_key_value.bias
+
             query_states, key_states, value_states = torch.split(
                 mixed_raw_layer, [
                     hidden_size, head_dim * num_kv_heads,
@@ -475,6 +481,8 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
         if only_has_language:
             # attn_output = self.language_expert_dense(context_layer)
             attn_output = torch.matmul(context_layer, self.language_expert_dense.weight.data)
+            if self.language_expert_dense.bias:
+                attn_output = attn_output + self.language_expert_dense.bias
         else:
             ctx_shape = list(context_layer.shape)
             ctx_shape[-1] *= world_size
@@ -489,7 +497,11 @@ class PatchedVisionExpertAttentionMuxi(nn.Module):
             #                 context_layer[:, language_token_mask, :])
 
             attn_output[:,vision_token_mask, :] = torch.matmul(context_layer[:, vision_token_mask, :], self.vision_expert_dense.weight.data)
+            if self.vision_expert_dense.bias is not None:
+                attn_output[:,vision_token_mask, :] = attn_output[:,vision_token_mask, :] + self.vision_expert_dense.bias
             attn_output[:,language_token_mask, :] = torch.matmul(context_layer[:, language_token_mask, :], self.language_expert_dense.weight.data)
+            if self.language_expert_dense.bias is not None:
+                attn_output[:,language_token_mask, :] = attn_output[:,language_token_mask, :]  + self.language_expert_dense.bias
 
         return attn_output, None, past_key_value
 

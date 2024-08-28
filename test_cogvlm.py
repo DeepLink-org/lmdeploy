@@ -9,13 +9,7 @@ from lmdeploy.vl import load_image
 
 
 if __name__ == '__main__': 
-    torch.manual_seed(10)
-    random.seed(10)
     pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
-
-    #image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
-    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
-    image1 = load_image("/home/pujiang/zhousl/data/cat.jpg")
 
     prompts = [
         {
@@ -27,16 +21,17 @@ if __name__ == '__main__':
         }
     ]
 
+    # image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
+    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
+
     # warm up
-    # response = pipe("How are you?")
-    # print(response)
+    response = pipe("How are you?")
+    print(response.text)
 
-    # response = pipe(("describe the image:", image))
-    # print(response)
+    # test image
+    response = pipe(("describe the image:", image), top_k=1)
+    print(response.text)
 
-
-    # question = ["How are you?"]
-    # question = ["Please introduce Shanghai."]
     # test multi batch
     question = ["How are you?", "Please introduce Shanghai."]
     response = pipe(question)
@@ -46,26 +41,11 @@ if __name__ == '__main__':
         print(f"A: {r.text}")
         print()
 
-    # test image
-    question = [("describe the image:", image)]
-    response = pipe(question)
-    for idx, r in enumerate(response):
-        print(f"Q: {question[idx]}")
-        print(f"A: {r.text}")
-        print()
+    # image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/demo/resources/human-pose.jpg')
+    image = load_image("/home/pujiang/zhousl/data/human_pose.jpg")
 
-    # question = ["How are you?", "How are you?"]
-    # question = ["How are you?", "Please introduce Shanghai."]
-    # response = pipe(question)
-    # for idx, r in enumerate(response):
-    #     print(f"batch_{idx}:")
-    #     print(f"Q: {question[idx]}")
-    #     print(f"A: {r.text}")
-    #     print()
-
-    # TODO: support session later
-    # sess = pipe.chat("I am living in shanghai!")
-    # print("############1: ", sess)
-    # # import pdb; pdb.set_trace()
-    # sess = pipe.chat("please introduce my city", session=sess)
-    # print("############2: ", sess)
+    # test multi session
+    sess = pipe.chat(("please describe this image.", image))
+    print("session 1: ", sess)
+    sess = pipe.chat('What is the woman doing?', session=sess)
+    print("session 2: ", sess)

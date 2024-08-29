@@ -138,8 +138,12 @@ class BaseModel:
         Returns:
             str: the concatenated prompt
         """
+        import pdb; pdb.set_trace()
         if isinstance(messages, str):
             return self.get_prompt(messages)
+        # return messages
+        import pdb; pdb.set_trace()
+
         # chat history processing in derived classes
 
     @classmethod
@@ -543,6 +547,30 @@ class InternLM2Chat7B(InternLMChat7B):
             ret += f'{begin}{content}{eox_map[role]}'
         ret += f'{self.assistant}'
         return ret
+
+
+@MODELS.register_module(name='internvl2')
+class InternVL(InternLM2Chat7B):
+
+    def __init__(
+            self,
+            meta_instruction='You are an AI assistant whose name is InternLM (书生·浦语).',
+            **kwargs):
+        super().__init__(meta_instruction=meta_instruction, **kwargs)
+
+    @classmethod
+    def match(cls, model_path: str) -> Optional[str]:
+        """Return the model_name that was registered to MODELS.
+
+        Args:
+            model_path (str): the model path used for matching.
+        """
+        path = model_path.lower()
+        if 'internvl2' in path:
+            if 'mini' in path and '4b' in path:
+                # use internvl-phi3 template
+                return None
+            return 'internvl2'
 
 
 @MODELS.register_module(name='internvl-internlm2')

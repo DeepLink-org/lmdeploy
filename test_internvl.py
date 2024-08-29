@@ -9,7 +9,10 @@ from lmdeploy.vl import load_image
 
 
 if __name__ == '__main__': 
-    pipe = pipeline('/data/models/InternVL-Chat-V1-5', backend_config = PytorchEngineConfig(tp=4, device_type='muxi', block_size=16,))
+    pipe = pipeline('/data/models/InternVL2-8B', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16,))
+    # pipe = pipeline('/data/models/InternVL2-26B', backend_config = PytorchEngineConfig(tp=2, device_type='muxi', block_size=16,))
+    # pipe = pipeline('/data/models/InternVL2-Llama3-76B', backend_config = PytorchEngineConfig(tp=4, device_type='muxi', block_size=16,))
+    # pipe = pipeline('/data/models/InternVL-Chat-V1-5', backend_config = PytorchEngineConfig(tp=2, device_type='muxi', block_size=16,))
 
     prompts = [
         {

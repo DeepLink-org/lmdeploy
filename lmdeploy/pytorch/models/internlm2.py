@@ -8,7 +8,7 @@ from torch import nn
 from transformers.cache_utils import Cache
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
-from ..kernels import apply_rotary_pos_emb, fill_kv_cache, paged_attention_fwd, rms_norm
+from ..kernels import apply_rotary_pos_emb, fused_rotary_emb_eager, fill_kv_cache, paged_attention_fwd, rms_norm
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
@@ -264,11 +264,13 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
 
                 cos, sin = self.rotary_emb(value_states.transpose(0, 1),
                                            **kwargs)
-                new_cos = cos.squeeze(-2)
-                new_cos = new_cos[..., :new_cos.shape[-1] // 2]
-                new_sin = sin.squeeze(-2)
-                new_sin = new_sin[..., :new_sin.shape[-1] // 2]
-                cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                cos = cos.squeeze(0)
+                cos = cos[..., :cos.shape[-1] // 2]
+                sin = sin.squeeze(0)
+                sin = sin[..., :sin.shape[-1] // 2]
+                cos_sin_cache = torch.cat((cos, sin), dim=-1)
+                context.cos = cos
+                context.sin = sin
                 context.cos_sin_cache = cos_sin_cache
 
             if self._use_old_rotary_emb:
@@ -307,16 +309,6 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             context=context,
         )
 
-        def dump_tensor(x, name):
-            import pickle
-            with open(f'/home/pujiang/zhousl/{name}.pkl', 'wb') as f:
-                if isinstance(x, torch.Tensor):
-                    pickle.dump(x.cpu(), f)
-                else:
-                    pickle.dump(x, f)
-
-        # if query_states.shape[0] > 3:
-        #     import pdb; pdb.set_trace()
         attn_output = torch.empty_like(query_states)
         paged_attention_fwd(
             query_states,
@@ -333,7 +325,6 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             window_size=None,
             context=context,
         )
-        # import pdb; pdb.set_trace()
         attn_output = attn_output.view(*hidden_states.shape[:-1], -1)
 
         attn_output = torch.matmul(attn_output, self.wo.weight)

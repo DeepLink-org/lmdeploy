@@ -259,6 +259,7 @@ def _update_model(model: torch.nn.Module):
 
 def update_model(model: torch.nn.Module):
     """update model."""
+    # import pdb; pdb.set_trace()
     return _update_model(model)
 
 

@@ -26,7 +26,7 @@ def apply_rotary_pos_emb(
             cos = cos[position_ids_1d].view(1, bs, 1, -1)
             sin = sin[position_ids_1d].view(1, bs, 1, -1)
         else:
-            raise RuntimeError("Cannot handle cos/sin shape dims!")
+            raise RuntimeError('Cannot handle cos/sin shape dims!')
 
         if context:
             setattr(context, 'cos', cos)

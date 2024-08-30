@@ -106,10 +106,9 @@ class PatchedQwen2MoeSparseMoeBlockAscend(nn.Module):
             routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
         routing_weights = routing_weights.to(hidden_states.dtype)
 
-        out_states = torch.zeros(
-            (batch_size * sequence_length, hidden_dim),
-            dtype=hidden_states.dtype,
-            device=hidden_states.device)
+        out_states = torch.zeros((batch_size * sequence_length, hidden_dim),
+                                 dtype=hidden_states.dtype,
+                                 device=hidden_states.device)
 
         expert_mask = torch.nn.functional.one_hot(
             selected_experts, num_classes=self.num_experts).permute(2, 1, 0)

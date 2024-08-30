@@ -217,11 +217,11 @@ class PatchedMixtralAttentionMuxi(nn.Module):
                 if not hasattr(context, 'cos_sin_cache'):
                     cos, sin = self.rotary_emb(value_states,
                                                seq_len=max_kv_seq_length)
-                    new_cos = cos.squeeze(-2)
-                    new_cos = new_cos[..., :new_cos.shape[-1] // 2]
-                    new_sin = sin.squeeze(-2)
-                    new_sin = new_sin[..., :new_sin.shape[-1] // 2]
-                    cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                    cos = cos.squeeze(0)
+                    cos = cos[..., :cos.shape[-1] // 2]
+                    sin = sin.squeeze(0)
+                    sin = sin[..., :sin.shape[-1] // 2]
+                    cos_sin_cache = torch.cat((cos, sin), dim=-1)
                     context.cos_sin_cache = cos_sin_cache
 
                 query_states, key_states = apply_rotary_pos_emb(

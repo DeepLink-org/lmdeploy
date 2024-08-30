@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import vllm._C.ops as ops
-import vllm._moe_C as moe_kernels
+from maca_extension import ops as ext_ops
 
 
 class SiluAndMul(nn.Module):
@@ -25,7 +24,7 @@ class SiluAndMul(nn.Module):
         d = x.shape[-1] // 2
         output_shape = (x.shape[:-1] + (d, ))
         out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
-        ops.silu_and_mul(out, x)
+        ext_ops.silu_and_mul(out, x)
         return out
 
 
@@ -63,7 +62,7 @@ def fused_moe(hidden_states: torch.Tensor,
                                         topk,
                                         dtype=torch.int32,
                                         device=hidden_states.device)
-    moe_kernels.topk_softmax(
+    ext_ops.topk_softmax(
         topk_weights,
         topk_ids,
         token_expert_indicies,

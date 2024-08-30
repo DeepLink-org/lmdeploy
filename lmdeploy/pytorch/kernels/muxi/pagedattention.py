@@ -4,7 +4,6 @@ import torch
 import math
 from torch import Tensor
 
-import vllm._C as vllm_ops
 from maca_extension import ops as ext_ops
 from flash_attn import flash_attn_varlen_func
 
@@ -171,7 +170,7 @@ def paged_attention_fwd(
         ))
     else:
         block_num, head, block_size, dim = value_cache.size()
-        vllm_ops.ops.paged_attention_v1(
+        ext_ops.paged_attention_v1(
             attn_output,
             query_states,
             key_cache,

@@ -15,9 +15,7 @@ from ..kernels import (fill_kv_cache, apply_rotary_pos_emb, fused_rotary_emb, fu
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
-from torch.profiler import profile, record_function, ProfilerActivity
-
-import vllm._C.ops as ops
+from maca_extension import ops as ext_ops
 
 TRANSFORMERS_VERSION = version.parse(transformers.__version__)
 VERSION_4_38_0 = version.parse('4.38.0')
@@ -517,7 +515,7 @@ class LlamaMLPMuxi(nn.Module):
         d = t.shape[-1] // 2
         output_shape = (t.shape[:-1] + (d, ))
         out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
-        ops.silu_and_mul(out, t)
+        ext_ops.silu_and_mul(out, t)
         down_proj = torch.matmul(out, self.down_proj.weight)
 
         return down_proj

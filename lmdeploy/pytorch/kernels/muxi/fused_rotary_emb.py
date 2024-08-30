@@ -1,9 +1,7 @@
 import torch
-from torch import nn
 from torch import Tensor
 
-from vllm._C import ops
-from torch.profiler import profile, record_function, ProfilerActivity
+from maca_extension import ops as ext_ops
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
@@ -27,14 +25,12 @@ def fused_rotary_emb(
     head_dim: int,
     context=None,
 ):
-    # import pdb; pdb.set_trace()
-    ops.rotary_embedding(position_ids,
+    ext_ops.rotary_embedding(position_ids,
                         query_states,
                         key_states,
                         head_dim,
                         context.cos_sin_cache,
                         True)
-    # import pdb; pdb.set_trace()
 
     return query_states, key_states
 

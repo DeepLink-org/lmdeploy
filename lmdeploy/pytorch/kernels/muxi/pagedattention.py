@@ -4,7 +4,7 @@ import torch
 import math
 from torch import Tensor
 
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 from flash_attn import flash_attn_varlen_func
 
 def make_cu_seqlens(seqlens):
@@ -151,11 +151,13 @@ def paged_attention_fwd(
         # else:
         #     cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
         #     cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
- 
+        block_num, head, block_size, dim = value_cache.size()
+
         if window_size:
             win_size = (window_size, window_size)
         else:
             win_size = (-1, -1)
+        # attn_output = ext_ops.context_attention(
         attn_output.copy_(flash_attn_varlen_func(
             query_states,
             key_states,
@@ -170,17 +172,19 @@ def paged_attention_fwd(
         ))
     else:
         block_num, head, block_size, dim = value_cache.size()
-        ext_ops.paged_attention_v1(
-            attn_output,
-            query_states,
-            key_cache,
-            value_cache,
-            head,
-            float(1 / math.sqrt(dim)), # scale
-            block_offsets,
-            kv_seqlens,
-            block_size,
-            max_kv_seq_length,
-            None,
-            'auto',
+        attn_output = ext_ops.paged_decode_attention(
+                query_states,
+                key_cache,
+                value_cache,
+                block_offsets,
+                block_size,
+                kv_seqlens,
+                max_kv_seq_length,
+                head,
+                head,
+                softmax_scale=float(1 / math.sqrt(dim)), # scale
+                alibi_slopes=None,
+                attn_output=None,
         )
+    
+    return attn_output

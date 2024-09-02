@@ -8,7 +8,7 @@ from torch.nn import functional as F
 
 # from flash_attn import flash_attn_varlen_func
 
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 
 def dump_tensor(x, name):
     import pickle

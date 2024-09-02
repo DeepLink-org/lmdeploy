@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""

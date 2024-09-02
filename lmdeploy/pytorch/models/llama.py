@@ -15,7 +15,7 @@ from ..kernels import (fill_kv_cache, apply_rotary_pos_emb, fused_rotary_emb, fu
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
 
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 
 TRANSFORMERS_VERSION = version.parse(transformers.__version__)
 VERSION_4_38_0 = version.parse('4.38.0')

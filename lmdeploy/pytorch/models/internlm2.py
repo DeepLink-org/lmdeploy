@@ -283,9 +283,10 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
             query_states, key_states = apply_rotary_pos_emb(
                 query_states,
                 key_states,
+                context.cos,
+                context.sin,
                 _position_ids_1d,
-                head_dim,
-                context=context,
+                context.cos_sin_cache
             )
 
             return query_states.view(-1, num_heads, head_dim), key_states.view(-1, num_kv_heads, head_dim), value_states
@@ -310,7 +311,7 @@ class PatchedInternLM2AttentionMuxi(nn.Module):
         )
 
         attn_output = torch.empty_like(query_states)
-        paged_attention_fwd(
+        attn_output = paged_attention_fwd(
             query_states,
             key_states,
             value_states,

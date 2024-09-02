@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 
 
 class SiluAndMul(nn.Module):

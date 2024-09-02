@@ -1,5 +1,3 @@
-from infer_ext.framework import lmdeploy_ext
-
 import torch
 import random
 

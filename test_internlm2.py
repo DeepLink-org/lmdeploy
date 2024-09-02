@@ -4,8 +4,8 @@ import lmdeploy
 from lmdeploy import PytorchEngineConfig
 
 if __name__ == "__main__":
-    # pipe = lmdeploy.pipeline("/data/models/internlm2-chat-7b",
-    pipe = lmdeploy.pipeline("/data/models/internlm2_5-7b-chat",
+    pipe = lmdeploy.pipeline("/data/models/internlm2-chat-7b",
+    # pipe = lmdeploy.pipeline("/data/models/internlm2_5-7b-chat",
                             backend_config = PytorchEngineConfig(tp=1,
                                                                  block_size=16,
                                                                  device_type='muxi',

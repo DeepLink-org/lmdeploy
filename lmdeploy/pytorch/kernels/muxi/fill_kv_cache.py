@@ -1,6 +1,5 @@
 from torch import Tensor
-
-from maca_extension import ops as ext_ops
+import dlinfer.ops as ext_ops
 
 def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
                   v_caches: Tensor, q_start_loc: Tensor, q_seq_length: Tensor,
@@ -10,12 +9,11 @@ def fill_kv_cache(k_states: Tensor, v_states: Tensor, k_caches: Tensor,
     # k_caches shape: [block_num, kv_head_num, head_size // x, block_size, x]
     # v_caches shape: [block_num, kv_head_num, block_size, head_size]
 
-    ext_ops.reshape_and_cache_new(
+    ext_ops.fill_kv_cache(
         k_states,
         v_states,
         k_caches,
         v_caches,
         context.kv_start_indices,
-        'auto',
     )
     return

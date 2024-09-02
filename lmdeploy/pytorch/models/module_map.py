@@ -391,6 +391,12 @@ ASCEND_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.internlm2.PatchedInternLM2AttentionAscend',
 })
 
+# ascend cogvlm
+ASCEND_MODULE_MAP.update({
+    'modeling_cogvlm.VisionExpertAttention':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.cogvlm.PatchedVisionExpertAttentionAscend',
+})
+
 # ascend mixtral
 ASCEND_MODULE_MAP.update({
     'transformers.models.mixtral.modeling_mixtral.MixtralAttention':

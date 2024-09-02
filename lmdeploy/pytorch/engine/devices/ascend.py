@@ -13,17 +13,31 @@ class ASCENDDeviceUtils(BaseDeviceUtils):
         """update step context."""
         kv_start_indices, attention_mask = [], []
         _, block_size, _, _ = step_context.kv_caches[0][0].shape
+        is_unpaged_prefill = (not step_context.is_decoding) and all(
+            (step_context.q_seq_length == step_context.kv_seq_length).tolist())
         for i in range(step_context.q_start_loc.size(0)):
-            single_attention_mask = torch.logical_not(
-                torch.tril(
-                    torch.ones(step_context.q_seq_length[i],
-                               step_context.block_offsets.shape[1] *
-                               block_size,
-                               dtype=torch.bool).cuda(),
-                    diagonal=step_context.kv_seq_length[i] -
-                    step_context.q_seq_length[i],
-                ))
-            attention_mask.append(single_attention_mask)
+            if is_unpaged_prefill:
+                attention_mask = torch.logical_not(
+                        torch.tril(
+                            torch.ones(step_context.max_q_seq_length,
+                                    step_context.max_kv_seq_length,
+                                    dtype=torch.bool).cuda(),
+                            diagonal=step_context.max_kv_seq_length -
+                            step_context.max_q_seq_length,
+                        ))
+            elif not step_context.is_decoding:
+                single_attention_mask = torch.logical_not(
+                    torch.tril(
+                        torch.ones(step_context.q_seq_length[i],
+                                step_context.block_offsets.shape[1] *
+                                block_size,
+                                dtype=torch.bool).cuda(),
+                        diagonal=step_context.kv_seq_length[i] -
+                        step_context.q_seq_length[i],
+                    ))
+                attention_mask.append(single_attention_mask)
+            else:
+                attention_mask = None
             history_length = step_context.history_lengths[i]
             block_idx = history_length // block_size
             block_loc = step_context.block_offsets[i][block_idx]
@@ -43,7 +57,5 @@ class ASCENDDeviceUtils(BaseDeviceUtils):
         setattr(step_context, 'q_seq_length', step_context.q_seq_length.cpu())
         setattr(step_context, 'kv_seq_length',
                 step_context.kv_seq_length.cpu())
-        is_unpaged_prefill = (not step_context.is_decoding) and all(
-            (step_context.q_seq_length == step_context.kv_seq_length).tolist())
         setattr(step_context, 'is_unpaged_prefill', is_unpaged_prefill)
         return step_context

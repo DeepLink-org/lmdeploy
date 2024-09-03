@@ -21,6 +21,6 @@ class CogVLMModelConfigBuilder(AutoModelConfigBuilder):
         cfg.unused_modules = ['model.vision']
         torch_dtype = 'bfloat16' if torch.cuda.is_bf16_supported(
         ) else 'float16'
-        hf_config.torch_dtype = torch_dtype
-        hf_config.torch_dtype = 'float16'
+        # hf_config.torch_dtype = torch_dtype
+        hf_config.torch_dtype = 'bfloat16'
         return cfg

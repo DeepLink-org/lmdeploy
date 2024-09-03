@@ -1,4 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from infer_ext.framework import lmdeploy_ext
+
 import asyncio
 import copy
 import os

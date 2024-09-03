@@ -15,17 +15,18 @@ class ASCENDDeviceUtils(BaseDeviceUtils):
         _, block_size, _, _ = step_context.kv_caches[0][0].shape
         is_unpaged_prefill = (not step_context.is_decoding) and all(
             (step_context.q_seq_length == step_context.kv_seq_length).tolist())
+        if is_unpaged_prefill:
+            single_attention_mask = torch.logical_not(
+                    torch.tril(
+                        torch.ones(step_context.max_q_seq_length,
+                                step_context.max_kv_seq_length,
+                                dtype=torch.bool).cuda(),
+                        diagonal=step_context.max_kv_seq_length -
+                        step_context.max_q_seq_length,
+                    ))
+            attention_mask.append(single_attention_mask)
         for i in range(step_context.q_start_loc.size(0)):
-            if is_unpaged_prefill:
-                attention_mask = torch.logical_not(
-                        torch.tril(
-                            torch.ones(step_context.max_q_seq_length,
-                                    step_context.max_kv_seq_length,
-                                    dtype=torch.bool).cuda(),
-                            diagonal=step_context.max_kv_seq_length -
-                            step_context.max_q_seq_length,
-                        ))
-            elif not step_context.is_decoding:
+            if not step_context.is_decoding:
                 single_attention_mask = torch.logical_not(
                     torch.tril(
                         torch.ones(step_context.q_seq_length[i],
@@ -36,8 +37,6 @@ class ASCENDDeviceUtils(BaseDeviceUtils):
                         step_context.q_seq_length[i],
                     ))
                 attention_mask.append(single_attention_mask)
-            else:
-                attention_mask = None
             history_length = step_context.history_lengths[i]
             block_idx = history_length // block_size
             block_loc = step_context.block_offsets[i][block_idx]

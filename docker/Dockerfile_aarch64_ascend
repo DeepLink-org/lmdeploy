@@ -114,7 +114,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip3 install transformers==4.41.0
     DEVICE=ascend python setup.py develop -j16
 
 # lmdeploy
-ARG LMDEPLOY_TAG_OR_COMMIT=5bc8bf8ad3360039f4cfdbffc03d105ca9ab0159
+ARG LMDEPLOY_TAG_OR_COMMIT=3248c8ec3192ba7c737c3d7656eed82d0c93b642
 RUN --mount=type=cache,target=/root/.cache/pip pip3 install timm
 RUN git clone https://github.com/DeepLink-org/lmdeploy && \
     cd lmdeploy && \

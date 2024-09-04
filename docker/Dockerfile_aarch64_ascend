@@ -36,15 +36,14 @@ RUN umask 0022  && \
     cd .. && \
     rm -rf Python*
 
-RUN pip3 config set global.index-url http://mirrors.aliyun.com/pypi/simple && \
+RUN --mount=type=cache,target=/root/.cache/pip pip3 config set global.index-url http://mirrors.aliyun.com/pypi/simple && \
     pip3 config set global.trusted-host mirrors.aliyun.com && \
     pip3 install -U pip && \
     pip3 install wheel==0.43.0 scikit-build==0.18.0 numpy==1.24 setuptools==69.5.1 && \
     pip3 install decorator sympy cffi && \
     pip3 install cmake ninja pyyaml && \
     pip3 install pathlib2 protobuf attrs attr scipy && \
-    pip3 install requests psutil absl-py && \
-    rm -rf /root/.cache/pip
+    pip3 install requests psutil absl-py
 
 ENV LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/hdf5/serial:$LD_LIBRARY_PATH
 ENV LD_PRELOAD=/lib/aarch64-linux-gnu/libGLdispatch.so.0:$LD_PRELOAD
@@ -102,11 +101,6 @@ RUN rm -rf ./*
 SHELL ["/bin/bash", "-i", "-c"]
 RUN echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> ~/.bashrc && \
     . ~/.bashrc
-
-# torch
-RUN pip3 install torch==2.1.0 torchvision==0.16.0 --index-url=https://download.pytorch.org/whl/cpu && \
-    pip3 install transformers==4.41.0 && \
-    rm -rf /root/.cache/pip
 
 # dlinfer
 WORKDIR /workspace

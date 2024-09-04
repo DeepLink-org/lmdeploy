@@ -120,7 +120,7 @@ RUN git clone https://github.com/CyCle1024/dlinfer && \
     rm -rf /root/.cache/pip
 
 # lmdeploy
-ARG LMDEPLOY_TAG_OR_COMMIT=0d98986086d87582b102e60f03620e32d05353fd
+ARG LMDEPLOY_TAG_OR_COMMIT=5bc8bf8ad3360039f4cfdbffc03d105ca9ab0159
 
 RUN git clone https://github.com/DeepLink-org/lmdeploy && \
     cd lmdeploy && \

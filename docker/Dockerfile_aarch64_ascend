@@ -106,19 +106,18 @@ RUN echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> ~/.bashrc && \
 WORKDIR /workspace
 ARG DLINFER_TAG_OR_COMMIT=6ddbeab830874700a3c98526e929ff2db2141060
 
-RUN git clone https://github.com/CyCle1024/dlinfer && \
+RUN --mount=type=cache,target=/root/.cache/pip pip3 install transformers==4.41.0 && \
+    git clone https://github.com/CyCle1024/dlinfer && \
     cd dlinfer && \
     git checkout ${DLINFER_TAG_OR_COMMIT} && \
     pip3 install -r requirements/ascend/full.txt && \
-    DEVICE=ascend python setup.py develop -j16 && \
-    rm -rf /root/.cache/pip
+    DEVICE=ascend python setup.py develop -j16
 
 # lmdeploy
 ARG LMDEPLOY_TAG_OR_COMMIT=5bc8bf8ad3360039f4cfdbffc03d105ca9ab0159
-
+RUN --mount=type=cache,target=/root/.cache/pip pip3 install timm
 RUN git clone https://github.com/DeepLink-org/lmdeploy && \
     cd lmdeploy && \
     git checkout ${LMDEPLOY_TAG_OR_COMMIT} && \
     sed -i '/triton/d' requirements/runtime.txt && \
-    pip3 install -v --no-build-isolation -e . && \
-    rm -rf /root/.cache/pip
+    pip3 install -v --no-build-isolation -e .

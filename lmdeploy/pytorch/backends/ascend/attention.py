@@ -65,53 +65,20 @@ class AscendAttentionImpl(AttentionImpl[AscendAttentionMetadata]):
         inplace: bool = True,
     ) -> Tensor:
         """forward."""
-        # if not attn_metadata.is_decoding:
-        #     attn_out = torch.ops.atb.atb_context_attention.default(query,
-        #                                                            key,
-        #                                                            value,
-        #                                                            k_cache,
-        #                                                            v_cache,
-        #                                                            attn_metadata.kv_start_indices_1d,
-        #                                                            attn_metadata.kv_seqlens_int,
-        #                                                            attn_metadata.new_attn_mask,
-        #                                                            self.num_heads,
-        #                                                            self.num_kv_heads,
-        #                                                            self.v_head_size,
-        #                                                            self.block_size)
-        #     return attn_out
-        # else:
-        #     attn_out = torch.ops.atb.atb_paged_attention.default(query,
-        #                                                            key,
-        #                                                            value,
-        #                                                            k_cache,
-        #                                                            v_cache,
-        #                                                            attn_metadata.kv_start_indices_1d,
-        #                                                            attn_metadata.kv_seqlens_int,
-        #                                                            attn_metadata.new_attn_mask,
-        #                                                            attn_metadata.block_offsets_int,
-        #                                                            self.num_heads,
-        #                                                            self.num_kv_heads,
-        #                                                            self.v_head_size,
-        #                                                            self.block_size)
-        #     return attn_out      
-
 
         k_cache = k_cache.view(-1, self.block_size, self.num_kv_heads, self.v_head_size)
         v_cache = v_cache.view(-1, self.block_size, self.num_kv_heads, self.v_head_size)
         
-        # k_cache, v_cache = torch.ops.atb.fill_kv_cache(key, value, k_cache, v_cache, attn_metadata.kv_start_indices_1d)
         k_cache, v_cache = ext_ops.fill_kv_cache(key, value, k_cache, v_cache, attn_metadata.kv_start_indices_1d)
 
         if attn_metadata.is_decoding:
             block_offsets = attn_metadata.block_offsets_int
-            # attn_output = torch.ops.atb.paged_attention_decode(query, k_cache, v_cache, block_offsets, attn_metadata.kv_seqlens_int, attn_metadata.new_attn_mask, self.num_heads, self.num_kv_heads)
             attn_output = torch.ops.atb.paged_attention_decode(query, k_cache, v_cache, block_offsets, attn_metadata.kv_seqlens_int, None, self.num_heads, self.num_kv_heads)
         else:
             query = query.view(-1, self.num_heads * self.v_head_size)
             key = key.view(-1, self.num_kv_heads * self.v_head_size)
             value = value.view(-1, self.num_kv_heads * self.v_head_size)
             attn_output = torch.ops.atb.context_attention(query, key, value, k_cache, v_cache, attn_metadata.kv_seqlens_int, attn_metadata.new_attn_mask, self.num_heads, self.num_kv_heads)
-            # attn_output = attn_output.view(-1, self.num_kv_heads, self.v_head_size)
         return attn_output
 
 class AscendAttentionBuilder(AttentionBuilder[AscendAttentionMetadata]):

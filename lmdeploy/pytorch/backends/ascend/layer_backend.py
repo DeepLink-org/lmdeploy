@@ -113,7 +113,7 @@ class AscendLayersBackend(DefaultLayersBackend):
             kv_seqlens=step_context.kv_seqlens,
             kv_start_indices=kv_start_indices,
             block_size=block_size,
-            attention_mask=None,
+            attention_mask=attention_mask,
             q_seqlens_int=step_context.q_seqlens.to(torch.int32),
             kv_seqlens_int=step_context.kv_seqlens.to(torch.int32),
             kv_start_indices_1d=kv_start_indices.flatten().to(torch.int32),

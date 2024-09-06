@@ -20,8 +20,6 @@ class AscendRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
         inv_freq = 1.0 / (self.base**(torch.arange(
             0, self.dim, 2, dtype=torch.int64).float() / self.dim)).float().cuda()
         self.register_buffer('inv_freq', inv_freq, persistent=False)
-        # import pdb;pdb.set_trace()
-        # pass
 
     def dump_tensor(self, name, t):
         import pickle
@@ -34,24 +32,14 @@ class AscendRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
         # x: [bs, num_attention_heads, seq_len, head_size]
         if self.inv_freq.device != x.device:
             self.inv_freq = self.inv_freq.to(x.device)
-        # self.dump_tensor("inv_freq", self.inv_freq)
-        # self.dump_tensor("position_ids", position_ids)
-        
+
         if self.scaling_factor != 1.0:
             position_ids = position_ids.float() / self.scaling_factor
         else:
             position_ids = position_ids.float()
-            
-        # XXX(tangzhiyi): assume position_ids.shape[0] == 1
-        # tt = self.inv_freq.unsqueeze(0).unsqueeze(-1).float()
-        # inv_freq_expanded = tt.view(1, -1, 1)
+
         inv_freq_expanded = self.inv_freq.view(1, -1, 1)
         position_ids_expanded = position_ids.unsqueeze(1)
-
-        # inv_freq_expanded = self.inv_freq[None, :, None].float().expand(
-        #     position_ids.shape[0], -1, 1)
-        # position_ids_expanded = position_ids[:, None, :]
-
 
         # # Force float32 since bfloat16 loses precision on long contexts
         # See https://github.com/huggingface/transformers/pull/29285
@@ -59,27 +47,14 @@ class AscendRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
         device_type = device_type if isinstance(
             device_type, str) and device_type != 'mps' else 'cpu'
         with torch.autocast(device_type=device_type, enabled=False):
-            # freqs = (inv_freq_expanded.float()
-            #          @ position_ids_expanded.float()).transpose(1, 2)
-            # self.dump_tensor("inv_freq_expanded", inv_freq_expanded)
-            # self.dump_tensor("position_ids_expanded", position_ids_expanded)
             inv_freq_expanded = inv_freq_expanded
             position_ids_expanded = position_ids_expanded
             # tmp = inv_freq_expanded @ position_ids_expanded
             tmp = torch.ops.atb.bmm.default(inv_freq_expanded, position_ids_expanded)
-            # self.dump_tensor("tmp", tmp)
             freqs = tmp.transpose(1, 2)
-            # self.dump_tensor("freqs", freqs.contiguous())
             emb = torch.cat((freqs, freqs), dim=-1)
-            # self.dump_tensor("emb", emb)
             cos = emb.cos().squeeze(0)
             sin = emb.sin().squeeze(0)
-            # self.dump_tensor("cos_float", cos)
-            # self.dump_tensor("sin_float", sin)
-        # cos_float16 = cos.to(dtype=x.dtype)
-        # sin_float16 = sin.to(dtype=x.dtype)
-        # self.dump_tensor("cos_float16", cos_float16)
-        # self.dump_tensor("sin_float16", sin_float16)
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
@@ -134,4 +109,3 @@ class LlamaDynamicNTKScalingRotaryEmbedding(RotaryEmbeddingImpl):
 
         cos, sin = super().forward(x, position_ids)
         return cos, sin
-

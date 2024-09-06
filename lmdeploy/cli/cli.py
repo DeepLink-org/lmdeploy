@@ -116,6 +116,7 @@ class CLI(object):
         # pytorch engine args
         pt_group = parser.add_argument_group('PyTorch engine arguments')
         ArgumentHelper.adapters(pt_group)
+        ArgumentHelper.device(pt_group)
 
         # common engine args
         tp_act = ArgumentHelper.tp(pt_group)
@@ -280,6 +281,7 @@ class CLI(object):
                 cache_max_entry_count=args.cache_max_entry_count,
                 adapters=adapters,
                 enable_prefix_caching=args.enable_prefix_caching,
+                device_type=args.device,
             )
             run_chat(args.model_path,
                      engine_config,
@@ -292,6 +294,7 @@ class CLI(object):
             kwargs.pop('meta_instruction')
             kwargs.pop('trust_remote_code')
             kwargs.pop('backend')
+            kwargs.pop('device')
             kwargs['chat_template_config'] = chat_template_config
             run_chat(**kwargs)
 

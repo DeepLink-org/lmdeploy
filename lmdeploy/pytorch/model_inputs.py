@@ -281,6 +281,7 @@ class StepContext:
         q_start_loc = q_seqlens.cumsum(0) - q_seqlens
 
         # position ids 1d
+        # import pdb;pdb.set_trace()
         position_ids = cls.get_position_ids_1d(position_ids, q_seqlens)[None]
         # seq_len + history_length
         kv_seqlens = q_seqlens + history_seqlens
@@ -289,7 +290,7 @@ class StepContext:
         adapter_params = None
         if inputs.adapter_info is not None:
             adapter_params = inputs.adapter_info.split_by_targets()
-
+        
         ret = StepContext(
             input_ids=inputs.input_ids,
             block_offsets=inputs.block_offsets,

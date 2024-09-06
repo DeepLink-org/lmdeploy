@@ -338,14 +338,16 @@ class ArgumentHelper:
         )
 
     @staticmethod
-    def device(parser):
+    def device(parser,
+               default: str = 'cuda',
+               choices: List[str] = ['cuda', 'ascend']):
         """Add argument device to parser."""
 
         return parser.add_argument('--device',
                                    type=str,
-                                   default='cuda',
-                                   choices=['cuda', 'cpu'],
-                                   help='Device type of running')
+                                   default=default,
+                                   choices=choices,
+                                   help='The device type of running')
 
     @staticmethod
     def meta_instruction(parser):

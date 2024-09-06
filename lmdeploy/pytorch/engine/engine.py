@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch
+import torch_npu
 
 from lmdeploy.messages import (EngineGenerationConfig, PytorchEngineConfig,
                                ResponseType)
@@ -770,7 +771,7 @@ class Engine:
 
                 # create inputs
                 inputs = self.create_model_inputs(running, adapters,
-                                                  is_prefill)
+                                                is_prefill)
                 sampling_inputs = SamplingInputs.from_sampling_params(running)
                 history_ids = __gather_history(running, sampling_inputs)
                 num_appendable_ids = __get_num_appendable_ids(running)

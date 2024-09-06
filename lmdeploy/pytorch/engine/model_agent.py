@@ -158,6 +158,28 @@ def model_forward(
     #     with_stack=False,
     #     with_flops=False,
     #     with_modules=False) as prof:
+
+    # experimental_config = torch_npu.profiler._ExperimentalConfig(
+    #     aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
+    #     profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+    #     l2_cache=False,
+    #     data_simplification=False
+    #     )
+    # with torch_npu.profiler.profile(
+    #         activities=[
+    #                 torch_npu.profiler.ProfilerActivity.CPU,
+    #                 torch_npu.profiler.ProfilerActivity.NPU
+    #                 ],
+    #         schedule=torch_npu.profiler.schedule(wait=1, warmup=1, active=2, repeat=2, skip_first=10),
+    #         on_trace_ready=torch_npu.profiler.tensorboard_trace_handler("./torch_npu_result"),
+    #         record_shapes=False,
+    #         profile_memory=False,
+    #         with_stack=False,
+    #         with_flops=False,
+    #         experimental_config=experimental_config) as prof:
+
+
+
     if True:
         with torch.cuda.stream(stream):
             # forward
@@ -698,6 +720,8 @@ def _start_tp_process(proc_id: int,
     """
     rank = proc_id + 1
     try:
+        from lmdeploy.pytorch.check_env import check_env_deeplink
+        check_env_deeplink(device_context.device_type)
         dist.init_process_group('nccl',
                                 rank=rank,
                                 world_size=world_size,

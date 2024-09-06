@@ -18,6 +18,16 @@ from ..weight_loader.dist_utils import (colwise_parallelize_linear,
 
 import torch._dynamo as dynamo
 import torch_npu
+import logging
+from torch.profiler import record_function
+
+# torch._logging.set_logs(dynamo=logging.DEBUG, output_code=False)
+torch._dynamo.assume_static_by_default = False
+torch._dynamo.config.suppress_errors = False
+torch._dynamo.config.cache_size_limit = 300000
+torch._dynamo.config.report_guard_failures = True
+torch._dynamo.config.enforce_cond_guards_match = False
+
 
 class LlamaAttention(nn.Module):
     """Rewrite module of LlamaAttention."""
@@ -42,9 +52,15 @@ class LlamaAttention(nn.Module):
             is_tp=is_tp,
         )
         del origin.q_proj, origin.k_proj, origin.v_proj
+        # self.q_weight = origin.q_proj.weight
+        # self.k_weight = origin.k_proj.weight
+        # self.v_weight = origin.v_proj.weight
         self.qkv_weight = self.qkv_proj.get_parameter('impl.mod.weight').data
         
         dynamo.mark_static(self.qkv_weight)
+        # dynamo.mark_static(self.q_weight)
+        # dynamo.mark_static(self.k_weight)
+        # dynamo.mark_static(self.v_weight)
 
         self.apply_rotary_pos_emb = ApplyRotaryEmb()
 
@@ -103,6 +119,12 @@ class LlamaAttention(nn.Module):
             ),
             dim=1,
         )
+        
+        # query_states = torch.ops.atb.linear(hidden_states, self.q_weight, None, False, True)
+        # key_states = torch.ops.atb.linear(hidden_states, self.k_weight, None, False, True)
+        # value_states = torch.ops.atb.linear(hidden_states, self.v_weight, None, False, True)
+        
+        
 
         cos, sin = rotary_pos_emb
         # import pdb;pdb.set_trace()
@@ -277,7 +299,6 @@ class LlamaModel(nn.Module):
         self.norm = RMSNorm(norm.weight,
                             norm.variance_epsilon,
                             is_w8a8=is_w8a8)
-
         rotary_emb = origin.layers[0].self_attn.rotary_emb
         rotary_name = type(rotary_emb).__name__
         if rotary_name in [
@@ -294,13 +315,15 @@ class LlamaModel(nn.Module):
             scaling_factor,
             emb_type,
         )
+        self.head_dim = self.layers[0].self_attn.head_dim
 
     def load_tensor(self, name):
         import pickle
         with open(f'{name}.pkl', 'rb') as f:
             out = pickle.load(f)
         return out.to('npu')
-    
+
+    @record_function("call_layers")
     @torch.compile(backend='atbgraph', dynamic=True)
     def call_layers(self, hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata):
         for idx, decoder_layer in enumerate(self.layers):
@@ -312,11 +335,31 @@ class LlamaModel(nn.Module):
                 residual=residual,
                 attn_metadata=attn_metadata,
             )
-            break
+            # break
+            # if idx > 0:
+            #     break
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
+    
+    @torch.compile(backend='atbgraph', dynamic=True)
+    def layer_embedding(self, input_ids, position_ids):
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
 
+        hidden_states = inputs_embeds
+        residual = None
+        cos, sin = self.rotary_emb(hidden_states, position_ids)
+        cos, sin = cos[0], sin[0]
+        return hidden_states, residual, cos, sin
+
+
+    def dump_tensor(self, name, t):
+        import pickle
+        with open(f'/tzy/dev_ops/{name}.pkl', 'wb') as f:
+            pickle.dump(t.cpu(), f)
+
+    # @record_function("llama_model_forward")
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -326,13 +369,19 @@ class LlamaModel(nn.Module):
         inputs_embeds: Optional[torch.FloatTensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """Rewrite of LlamaModel.forward."""
+        # self.dump_tensor("input_ids", input_ids)
+        # self.dump_tensor("embedding_weight", self.embed_tokens.weight)
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
+        # self.dump_tensor("inputs_embeds", inputs_embeds)
+        # import pdb;pdb.set_trace()
 
         hidden_states = inputs_embeds
         residual = None
         cos, sin = self.rotary_emb(hidden_states, position_ids)
-        cos, sin = cos[0], sin[0]
+        # cos, sin = cos[0], sin[0]
+        # cos, sin = cos.view(-1, self.head_dim), sin.view(-1, self.head_dim)
+
         rotary_pos_emb = (cos, sin)
         
         
@@ -368,7 +417,9 @@ class LlamaForCausalLM(nn.Module):
         self.model = LlamaModel(origin.model, ctx_mgr)
         self.lm_head = build_rowwise_linear(origin.lm_head)
         self.opt_model = torch.compile(self.model, backend='atbgraph', dynamic=False)
+        self.lm_head_weight = self.lm_head.get_parameter('impl.mod.weight').data
 
+    @torch.compile(backend='atbgraph', dynamic=True)
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -387,7 +438,8 @@ class LlamaForCausalLM(nn.Module):
             inputs_embeds=inputs_embeds,
         )
 
-        logits = self.lm_head(hidden_states)
+        # logits = self.lm_head(hidden_states)
+        logits = torch.ops.atb.linear(hidden_states, self.lm_head_weight, None, False, True)
         logits = logits.float()
         return logits
 

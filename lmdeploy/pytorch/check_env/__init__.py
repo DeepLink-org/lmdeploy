@@ -3,7 +3,7 @@ from logging import Logger
 from typing import List
 
 from lmdeploy.utils import get_logger
-
+import torch
 
 def _handle_exception(e: Exception,
                       mod_name: str,
@@ -20,6 +20,23 @@ def _handle_exception(e: Exception,
                  f'{message}'
                  f'{reset_color}')
     exit(1)
+
+
+def check_env_deeplink(device_type: str):
+    """check Deeplink environment if specific device_type is set."""
+    deeplink_device_type_list = [
+        'ascend',
+    ]
+    if device_type in deeplink_device_type_list:
+        logger = get_logger('lmdeploy')
+        try:
+            import infer_ext  # noqa: F401
+            import dicp.vendor.AtbGraph.ext_ops
+            torch._dynamo.assume_static_by_default = False
+            torch._dynamo.config.suppress_errors = False
+            torch._dynamo.config.cache_size_limit = 3000
+        except Exception as e:
+            _handle_exception(e, 'PyTorch', logger)
 
 
 def check_env_torch():
@@ -78,6 +95,7 @@ def check_env(device_type: str):
     """check all environment."""
     logger = get_logger('lmdeploy')
     logger.info('Checking environment for PyTorch Engine.')
+    check_env_deeplink(device_type)
     check_env_torch()
     if device_type == 'cuda':
         check_env_triton()

@@ -15,7 +15,7 @@ logger = get_logger('lmdeploy')
 
 try:
     from peft.tuners.lora import Linear as LoRALinear
-except ImportError:
+except Exception:
     logger.debug('load peft.tuners.lora.Linear failed.')
 
     class LoRALinear:

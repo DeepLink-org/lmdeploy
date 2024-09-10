@@ -53,8 +53,8 @@ class AscendRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
             tmp = torch.ops.atb.bmm.default(inv_freq_expanded, position_ids_expanded)
             freqs = tmp.transpose(1, 2)
             emb = torch.cat((freqs, freqs), dim=-1)
-            cos = emb.cos().squeeze(0)
-            sin = emb.sin().squeeze(0)
+            cos = emb.cos()
+            sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 

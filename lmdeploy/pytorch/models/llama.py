@@ -99,7 +99,8 @@ class LlamaAttention(nn.Module):
                Optional[Tuple[torch.Tensor]]]:
         """Rewrite of LlamaAttention.forward."""
         qkv_states = torch.ops.atb.linear(hidden_states, self.qkv_weight, None, False, True)
-        qkv_states = qkv_states.view(-1, self.num_heads + self.num_kv_heads + self.num_kv_heads, self.head_dim)
+        qkv_states = qkv_states.flatten(0, -2)
+        qkv_states = qkv_states.unflatten(-1, (-1, self.head_dim))
         query_states, key_states, value_states = qkv_states.split(
             (
                 self.num_heads,
@@ -274,31 +275,6 @@ class LlamaModel(nn.Module):
         )
         self.head_dim = self.layers[0].self_attn.head_dim
 
-    @record_function("call_layers")
-    def call_layers(self, hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata):
-        for idx, decoder_layer in enumerate(self.layers):
-            past_key_value = past_key_values[idx]
-            hidden_states, residual = decoder_layer(
-                hidden_states,
-                rotary_pos_emb=rotary_pos_emb,
-                past_key_value=past_key_value,
-                residual=residual,
-                attn_metadata=attn_metadata,
-            )
-        hidden_states, _ = self.norm(hidden_states, residual)
-        return hidden_states
-    
-    @torch.compile(backend='atbgraph', dynamic=True)
-    def layer_embedding(self, input_ids, position_ids):
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        hidden_states = inputs_embeds
-        residual = None
-        cos, sin = self.rotary_emb(hidden_states, position_ids)
-        cos, sin = cos[0], sin[0]
-        return hidden_states, residual, cos, sin
-
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -314,10 +290,18 @@ class LlamaModel(nn.Module):
         residual = None
         cos, sin = self.rotary_emb(hidden_states, position_ids)
 
-        rotary_pos_emb = (cos, sin)
-        
-        hidden_states = self.call_layers(hidden_states, residual, past_key_values, rotary_pos_emb, attn_metadata)
+        rotary_pos_emb = (cos[0], sin[0])
 
+        for idx, decoder_layer in enumerate(self.layers):
+            past_key_value = past_key_values[idx]
+            hidden_states, residual = decoder_layer(
+                hidden_states,
+                rotary_pos_emb=rotary_pos_emb,
+                past_key_value=past_key_value,
+                residual=residual,
+                attn_metadata=attn_metadata,
+            )
+        hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
 

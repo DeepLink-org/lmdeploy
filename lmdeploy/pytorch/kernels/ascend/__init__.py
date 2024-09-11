@@ -6,6 +6,7 @@ from .fused_rotary_emb import fused_rotary_emb
 from .moe_gating_topk_softmax import moe_gating_topk_softmax
 from .paged_attention_fwd import paged_attention_fwd
 from .rms_norm import rms_norm
+# from .fused_moe import fused_moe
 
 __all__ = [
     'rms_norm',
@@ -15,4 +16,5 @@ __all__ = [
     'paged_attention_fwd',
     'moe_gating_topk_softmax',
     'multinomial_sampling',
+    # 'fused_moe',
 ]

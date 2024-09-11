@@ -30,7 +30,7 @@ def check_env_deeplink(device_type: str):
     if device_type in deeplink_device_type_list:
         logger = get_logger('lmdeploy')
         try:
-            import infer_ext  # noqa: F401
+            import dlinfer  # noqa: F401
         except Exception as e:
             _handle_exception(e, 'PyTorch', logger)
 

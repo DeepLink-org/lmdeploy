@@ -297,8 +297,8 @@ MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2Attention',
     'modeling_deepseek.DeepseekV2Model':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
-    'modeling_deepseek.DeepseekV2MoE':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoE',
+    # 'modeling_deepseek.DeepseekV2MoE':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoE',
     'modeling_deepseek.DeepseekV2RMSNorm':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaRMSNorm',
     'modeling_deepseek.DeepseekV2MLP':
@@ -423,6 +423,6 @@ ASCEND_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionAscend',
     'modeling_deepseek.DeepseekV2FlashAttention2':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionAscend',
-    'modeling_deepseek.DeepseekV2MoE':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoEAscend',
+    # 'modeling_deepseek.DeepseekV2MoE':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoEAscend',
 })

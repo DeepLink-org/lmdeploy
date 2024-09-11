@@ -3,6 +3,7 @@ import gc
 from typing import Any, Optional
 
 import torch
+import numpy as np
 import torch.distributed as dist
 from torch import nn
 
@@ -430,7 +431,6 @@ class PatchedDeepseekV2AttentionAscend(nn.Module):
         # block_size = past_key_value[0].size(1)
         # shared_kv = block_size >= 64
         shared_kv = True
-        import pdb;pdb.set_trace()
         paged_attention_fwd(
             query_states,
             key_states,
@@ -447,7 +447,6 @@ class PatchedDeepseekV2AttentionAscend(nn.Module):
             shared_kv=shared_kv,
             context=context,
         )
-        import pdb;pdb.set_trace()
         torch.cuda.synchronize()
 
         # (num_heads, q_len, v_head_dim)
@@ -607,7 +606,7 @@ class PatchedDeepseekV2MoE(nn.Module):
                         topk_weight,
                         topk_ids,
                         topk=self.num_experts_per_tok,
-                        expert_offset=expert_offset,
+                        # expert_offset=expert_offset,
                         num_experts=world_size * exp_per_rank,
                         renormalize=False)
         return ret
@@ -711,8 +710,27 @@ class PatchedDeepseekV2MoEAscend(nn.Module):
         orig_shape = hidden_states.shape
         topk_idx, topk_weight, _ = self.gate(hidden_states)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        import pdb;pdb.set_trace()
         y = self.moe_infer(hidden_states, topk_idx,
                            topk_weight).view(*orig_shape)
         if self.config.n_shared_experts is not None:
             y = y + self.shared_experts.forward(identity)
         return y
+
+
+    def moe_infer(self, x, topk_ids, topk_weight):
+        """moe infer."""
+        # world_size = 1
+        # rank = 0
+        # if dist.is_initialized():
+        #     world_size = dist.get_world_size()
+        #     rank = dist.get_rank()
+        # exp_per_rank = self.gate_up_weights.size(0)
+        # expert_offset = rank * exp_per_rank
+        ret = fused_moe(x,
+                        self.gate_up_weights,
+                        self.down_weights,
+                        topk_weight,
+                        topk_ids,
+                        topk=self.num_experts_per_tok)
+        return ret

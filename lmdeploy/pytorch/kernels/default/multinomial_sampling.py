@@ -4,7 +4,7 @@ from torch import LongTensor, Tensor
 
 
 def multinomial_sampling(scores: Tensor,
-                         seeds: LongTensor,
+                        seeds: LongTensor,
                          offsets: LongTensor,
                          indices: Tensor = None):
     sampled_index = torch.multinomial(scores, num_samples=1, replacement=True)

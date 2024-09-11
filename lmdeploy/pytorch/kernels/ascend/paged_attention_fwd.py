@@ -1,10 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import infer_ext.ops as ext_ops
+import dlinfer.ops as ext_ops
 import torch
 from torch import Tensor
 
 
-def flash_context_attention(
+def prefill_attention(
     query_states: Tensor,
     key_states: Tensor,
     value_states: Tensor,
@@ -22,45 +22,42 @@ def flash_context_attention(
 ):
     num_q_heads, dim = query_states.shape[1:3]
     num_kv_heads = value_states.shape[1]
-    batch = q_start_loc.shape[0]
 
-    for i in range(batch):
-        if torch.equal(q_seq_len[i], kv_seq_len[i]):
-            ext_ops.context_attention(
-                query_states,
-                key_states,
-                value_states,
-                q_start_loc[i:i + 1],
-                q_seq_len[i:i + 1],
-                num_q_heads,
-                num_kv_heads,
-                context.attention_mask[i:i + 1],
-                attn_qk_scale=sm_scale,
-                attn_output=attn_output,
-            )
-        else:
-            key_cache = key_cache.reshape(1, kv_cache_len, num_kv_heads * dim)
-            value_cache = value_cache.reshape(1, kv_cache_len,
-                                              num_kv_heads * dim)
-            ext_ops.paged_prefill_attention(
-                query_states,
-                key_cache,
-                value_cache,
-                block_offsets,
-                block_size,
-                q_start_loc[i:i + 1],
-                q_seq_len[i:i + 1],
-                kv_seq_len[i:i + 1],
-                num_q_heads,
-                num_kv_heads,
-                context.attention_mask[i:i + 1],
-                attn_qk_scale=sm_scale,
-                attn_output=attn_output,
-            )
+    if context.is_unpaged_prefill:
+        ext_ops.prefill_attention(
+            query_states,
+            key_states,
+            value_states,
+            q_start_loc,
+            q_seq_len,
+            context.max_q_seq_length,
+            num_q_heads,
+            num_kv_heads,
+            attn_mask=context.attention_mask,
+            softmax_scale=sm_scale,
+            attn_output=attn_output,
+        )
+    else:
+        key_cache = key_cache.reshape(1, kv_cache_len, num_kv_heads * dim)
+        value_cache = value_cache.reshape(1, kv_cache_len, num_kv_heads * dim)
+        ext_ops.paged_prefill_attention(
+            query_states,
+            key_cache,
+            value_cache,
+            block_offsets,
+            block_size,
+            q_start_loc,
+            q_seq_len,
+            kv_seq_len,
+            num_q_heads,
+            num_kv_heads,
+            attn_mask=context.attention_mask,
+            attn_output=attn_output,
+        )
 
 
-def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
-                          block_offsets, block_size, sm_scale):
+def paged_decode_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
+                           max_kv_seq_len, block_offsets, block_size, sm_scale):
     num_kv_heads, num_q_heads = k_cache.shape[1], q.shape[1]
     ext_ops.paged_decode_attention(
         q,
@@ -69,9 +66,10 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
         block_offsets,
         block_size,
         kv_seq_len,
+        max_kv_seq_len,
         num_q_heads,
         num_kv_heads,
-        attn_qk_scale=sm_scale,
+        softmax_scale=sm_scale,
         attn_output=attn_output,
     )
 
@@ -93,15 +91,13 @@ def paged_attention_fwd(
     shared_kv: bool = False,
     context=None,
 ):
-    # if shared_kv:
-        # value_states = key_states[:]
     is_decoding = query_states.shape[-3] == q_seqlens.size(0)
-    block_num, block_size, head, _ = key_cache.size()
+    block_num, block_size, head, dim = key_cache.size()
     kv_cache_len = block_num * block_size
     k = key_cache.reshape(block_num * block_size, head, -1)
     v = value_cache.reshape(block_num * block_size, head, -1)
     if not is_decoding:
-        flash_context_attention(
+        prefill_attention(
             query_states,
             key_states,
             value_states,
@@ -118,12 +114,13 @@ def paged_attention_fwd(
             context=context,
         )
     else:
-        paged_token_attention(
+        paged_decode_attention(
             query_states,
             k,
             v,
             attn_output,
             kv_seqlens,
+            context.max_kv_seq_length,
             block_offsets,
             block_size,
             sm_scale,

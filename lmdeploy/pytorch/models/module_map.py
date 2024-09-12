@@ -272,17 +272,17 @@ MODULE_MAP.update({
 # deepseek-v2
 MODULE_MAP.update({
     'modeling_deepseek.DeepseekV2Attention':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2Attention',
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
     'modeling_deepseek.DeepseekV2FlashAttention2':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2Attention',
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
     'modeling_deepseek.DeepseekV2Model':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
-    'modeling_deepseek.DeepseekV2MoE':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoE',
-    'modeling_deepseek.DeepseekV2RMSNorm':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaRMSNorm',
-    'modeling_deepseek.DeepseekV2MLP':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLP',
+    # 'modeling_deepseek.DeepseekV2MoE':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoE',
+    # 'modeling_deepseek.DeepseekV2RMSNorm':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaRMSNorm',
+    # 'modeling_deepseek.DeepseekV2MLP':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLP',
 })
 
 # cogvlm
@@ -377,8 +377,14 @@ MUXI_MODULE_MAP.update({
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
     'modeling_deepseek.DeepseekV2FlashAttention2':
     f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2AttentionMuxi',
-    'modeling_deepseek.DeepseekMoE':
-    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek.PatchedDeepseekV2MoEMuxi',
+    'modeling_deepseek.DeepseekV2Model':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaModel',
+    # 'modeling_deepseek.DeepseekV2MoE':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.deepseek_v2.PatchedDeepseekV2MoE',
+    'modeling_deepseek.DeepseekV2RMSNorm':
+    f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaRMSNorm',
+    # 'modeling_deepseek.DeepseekV2MLP':
+    # f'{LMDEPLOY_PYTORCH_MODEL_PATH}.llama.LlamaMLP',
 })
 
 # muxi cogvlm

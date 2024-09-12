@@ -33,6 +33,7 @@ from lmdeploy.serve.qos_engine.qos_engine import QosEngine
 from lmdeploy.tokenizer import DetokenizeState, Tokenizer
 from lmdeploy.utils import get_logger
 
+from infer_ext.framework import lmdeploy_ext
 
 class VariableInterface:
     """A IO interface maintaining variables."""

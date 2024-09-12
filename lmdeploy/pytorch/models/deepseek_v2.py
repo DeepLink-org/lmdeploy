@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import gc
+import math
 from typing import Any, Optional
 
 import torch
@@ -12,6 +13,28 @@ from ..kernels import (apply_rotary_pos_emb, fill_kv_cache,
                        paged_attention_fwd_prefill, paged_attention_fwd, rms_norm)
 from ..weight_loader.dist_utils import (colwise_parallelize_linear,
                                         rowwise_parallelize_linear)
+
+# Efficient implementation equivalent to the following:
+def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None) -> torch.Tensor:
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+    attn_bias = torch.zeros(L, S, dtype=query.dtype)
+    if is_causal:
+        assert attn_mask is None
+        temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+        attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+        attn_bias.to(query.dtype)
+
+    if attn_mask is not None:
+        if attn_mask.dtype == torch.bool:
+            attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+        else:
+            attn_bias += attn_mask
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    attn_weight += attn_bias.to(query.device)
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+    attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+    return attn_weight @ value
 
 
 class PatchedDeepseekV2Attention(nn.Module):
@@ -368,9 +391,19 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             # (q_len, 1, pe_size)
             k_pe = key_states[..., nope_size:]
             # inplace kv_a_layernorm
-            value_states =rms_norm(value_states,
-                                   weight=self.kv_a_layernorm.weight,
-                                   eps=self.kv_a_layernorm.variance_epsilon)
+            # value_states =rms_norm(value_states,
+            #                        weight=self.kv_a_layernorm.weight,
+            #                        eps=self.kv_a_layernorm.variance_epsilon)
+
+            input_dtype = value_states.dtype
+            value_states = value_states.to(torch.float32)
+            variance = value_states.pow(2).mean(-1, keepdim=True)
+            value_states = value_states * torch.rsqrt(variance + self.kv_a_layernorm.variance_epsilon)
+            value_states = self.kv_a_layernorm.weight * value_states
+            value_states = value_states.to(input_dtype)
+
+            key_states[..., :nope_size] = value_states.clone()
+
             return key_states, value_states, k_pe
 
         def __qkv_proj(hidden_states):
@@ -380,48 +413,55 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             query_states, q_pe = __q_proj(hidden_states, nope_size, pe_size)
             key_states, value_states, k_pe = __kv_proj(hidden_states,
                                                        nope_size)
-
             return query_states, key_states, value_states, q_pe, k_pe
 
-        def __rotary_emb_fn(q_pe, k_pe, out_q_pe, out_k_pe):
+        def __rotary_emb_fn(q_pe, k_pe, pe_head_dim):
             """rope."""
-            if not hasattr(context, '_cos'):
-                cos, sin = self.rotary_emb(q_pe, seq_len=max_kv_seq_length)
-                context._cos = cos
-                context._sin = sin
-            else:
-                cos = context._cos
-                sin = context._sin
-
             if not hasattr(context, 'cos_sin_cache'):
-                new_cos = cos.squeeze(-2)
-                new_cos = new_cos[..., :new_cos.shape[-1] // 2]
-                new_sin = sin.squeeze(-2)
-                new_sin = new_sin[..., :new_sin.shape[-1] // 2]
-                cos_sin_cache = torch.cat((new_cos, new_sin), dim=-1)
+                cos, sin = self.rotary_emb(q_pe, seq_len=max_kv_seq_length)
+                cos = cos.squeeze(-2)
+                cos = cos[..., :cos.shape[-1] // 2]
+                sin = sin.squeeze(-2)
+                sin = sin[..., :sin.shape[-1] // 2]
+                cos_sin_cache = torch.cat((cos, sin), dim=-1)
+                context.cos = cos
+                context.sin = sin
                 context.cos_sin_cache = cos_sin_cache
-            # import pdb; pdb.set_trace()
             out_q_pe, out_k_pe = apply_rotary_pos_emb(q_pe,
                                                       k_pe,
                                                       context.position_ids_1d,
-                                                      q_pe.shape[-1],
+                                                      pe_head_dim,
                                                       context=context)
-            # import pdb; pdb.set_trace()
             return out_q_pe, out_k_pe
 
         query_states, key_states, value_states, q_pe, k_pe = __qkv_proj(
             hidden_states)
-        nope_size = self.kv_lora_rank
-        # import pdb; pdb.set_trace()
-        __rotary_emb_fn(q_pe, k_pe, query_states[..., nope_size:],
-                        key_states[..., nope_size:])
 
-        # import pdb; pdb.set_trace()
+        nope_size = self.kv_lora_rank
+        
+        pe_q_num_heads, pe_head_dim = q_pe.shape[1], q_pe.shape[2]
+        pe_kv_num_heads = k_pe.shape[1]
+        q_pe = q_pe.reshape(-1, pe_q_num_heads * pe_head_dim)
+        k_pe = k_pe.reshape(-1, pe_kv_num_heads * pe_head_dim)
+    
+        out_q_pe, out_k_pe = __rotary_emb_fn(q_pe, k_pe, pe_head_dim)
+
+        out_q_pe = out_q_pe.reshape(-1, pe_q_num_heads, pe_head_dim)
+        out_k_pe = out_k_pe.reshape(-1, pe_kv_num_heads, pe_head_dim)
+
+        query_states[..., nope_size:] = out_q_pe.clone()
+        key_states[..., nope_size:] = out_k_pe.clone()
+
+        head_dim = key_states.shape[-1]
+        value_states = torch.nn.functional.pad(value_states, [0, head_dim - nope_size], value=0).contiguous()
+
+        # block_num, head, dim1, block_size, dim2 = past_key_value[0].size()
         fill_kv_cache(
             key_states,
-            key_states,
+            value_states,
             past_key_value[0],
-            past_key_value[0],
+            past_key_value[1],
+            # value_cache,
             q_start_loc,
             q_seq_length,
             kv_seq_length=kv_seq_length,
@@ -429,26 +469,15 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
             block_offsets=block_offsets,
             context=context,
         )
-        # import pdb; pdb.set_trace()
 
-        # attn_output = query_states[..., :nope_size]
-        # attn_output = torch.empty_like(query_states[..., :nope_size])
-
-        block_size = past_key_value[0].size(1)
-        shared_kv = block_size >= 64
-        # import pdb; pdb.set_trace()
-
-        attn_output = torch.empty_like(query_states[..., :nope_size])
-        is_decoding = query_states.shape[0] == 1
-
-        if is_decoding:
-            import pdb; pdb.set_trace()
-            paged_attention_fwd(
+        if context.is_decoding:
+            attn_output = torch.empty_like(query_states)
+            attn_output = paged_attention_fwd(
                 query_states,
                 key_states,
                 value_states,
                 past_key_value[0],
-                past_key_value[0][..., :nope_size],
+                past_key_value[1],
                 attn_output,
                 block_offsets,
                 q_seqlens=q_seq_length,
@@ -458,21 +487,50 @@ class PatchedDeepseekV2AttentionMuxi(nn.Module):
                 window_size=None,
                 context=context,
             )
+            attn_output=attn_output[..., :nope_size].contiguous()
         else:
-            attn_output = paged_attention_fwd_prefill(
-                query_states,
-                key_states,
-                value_states,
-                past_key_value[0],
-                past_key_value[0][..., :nope_size],
-                block_offsets,
-                q_seqlens=q_seq_length,
-                kv_seqlens=kv_seq_length,
-                max_q_seq_length=max_q_seq_length,
-                max_kv_seq_length=max_kv_seq_length,
-                window_size=None,
-                context=context,
-            )
+            input_type = query_states.dtype
+
+            query_states = query_states.to(torch.float32)
+            key_states = key_states.to(torch.float32)
+            value_states = value_states.to(torch.float32)
+
+            query_states = query_states.contiguous()
+            key_states = key_states.contiguous()
+            value_states = value_states.contiguous()
+
+            # (bs, seq_len, num_head, head_dim)
+            query_states = query_states.unsqueeze(0).contiguous()
+            # key_states = key_states.unsqueeze(0).contiguous()
+            # value_states = value_states.unsqueeze(0).contiguous()
+            # key_states = key_states.unsqueeze(0).repeat(1, 1, 8, 1)
+            # value_states = value_states.unsqueeze(0).repeat(1, 1, 8, 1)
+            key_states = key_states.unsqueeze(0).repeat(1, 1, 16, 1)
+            value_states = value_states.unsqueeze(0).repeat(1, 1, 16, 1)
+
+            # (bs, num_head, seq_len, head_dim)
+            query_states = query_states.transpose(1, 2).contiguous()
+            key_states = key_states.transpose(1, 2).contiguous()
+            value_states = value_states.transpose(1, 2).contiguous()
+
+            # (bs, num_head, seq_len, head_dim)
+            attn_output = scaled_dot_product_attention(query_states, key_states, value_states, is_causal=True, scale=self.softmax_scale)
+
+            # import pdb; pdb.set_trace()
+
+            # (seq_len, num_head, head_dim)
+            attn_output = attn_output.transpose(1, 2).flatten(0, 1)
+
+            # if query_states.device.index == 0:
+            #     import pdb; pdb.set_trace()
+
+            attn_output=attn_output[..., :nope_size].contiguous()
+            attn_output = attn_output.to(input_type)
+
+            # if query_states.device.index == 0:
+            #     import pdb; pdb.set_trace()
+
+        # import pdb; pdb.set_trace()
 
         # (num_heads, q_len, v_head_dim)
         attn_bmm_out = attn_output.new_empty(q_len, num_heads, self.v_head_dim)
@@ -607,16 +665,18 @@ class PatchedDeepseekV2MoE(nn.Module):
 
     def forward(self, hidden_states):
         identity = hidden_states
+
         orig_shape = hidden_states.shape
-        topk_idx, topk_weight, _ = self.gate(hidden_states)
+        # topk_idx, topk_weight, _ = self.gate(hidden_states)
+        # topk_weight, _ = self.gate(hidden_states)
+        router_logits = self.gate(hidden_states)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        y = self.moe_infer(hidden_states, topk_idx,
-                           topk_weight).view(*orig_shape)
+        y = self.moe_infer(hidden_states, router_logits).view(*orig_shape)
         if self.config.n_shared_experts is not None:
             y = y + self.shared_experts.forward(identity)
         return y
 
-    def moe_infer(self, x, topk_ids, topk_weight):
+    def moe_infer(self, x, router_logits):
         """moe infer."""
         world_size = 1
         rank = 0
@@ -628,11 +688,8 @@ class PatchedDeepseekV2MoE(nn.Module):
         ret = fused_moe(x,
                         self.gate_up_weights,
                         self.down_weights,
-                        topk_weight,
-                        topk_ids,
+                        router_logits,
                         topk=self.num_experts_per_tok,
-                        expert_offset=expert_offset,
-                        num_experts=world_size * exp_per_rank,
                         renormalize=False)
         return ret
 

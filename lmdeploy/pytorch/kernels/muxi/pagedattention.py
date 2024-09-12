@@ -92,8 +92,8 @@ def paged_attention_fwd_prefill(
     cu_seqlens_q = context.cu_seqlens_q
     cu_seqlens_kv = context.cu_seqlens_kv
     # else:
-    #     cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
-    #     cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
+    # cu_seqlens_q = make_cu_seqlens(q_seqlens).int()
+    # cu_seqlens_kv = make_cu_seqlens(kv_seqlens).int()
 
     if window_size:
         win_size = (window_size, window_size)
@@ -170,13 +170,16 @@ def paged_attention_fwd(
             window_size=win_size,
         ))
     else:
+        # block_num, head, _, block_size, _ = value_cache.size()
         block_num, head, block_size, dim = value_cache.size()
-        vllm_ops.ops.paged_attention_v1(
+        ext_ops.paged_attention_v1(
+        # vllm_ops.ops.paged_attention_v1(
             attn_output,
             query_states,
             key_cache,
             value_cache,
             head,
+            # 0.1147213867929261,
             float(1 / math.sqrt(dim)), # scale
             block_offsets,
             kv_seqlens,
@@ -184,4 +187,5 @@ def paged_attention_fwd(
             max_kv_seq_length,
             None,
             'auto',
-        )
+        ) 
+        return attn_output

@@ -16,9 +16,11 @@ class DeepseekV2ModelConfigBuilder(AutoModelConfigBuilder):
         """build."""
         head_dim = (hf_config.kv_lora_rank + hf_config.qk_rope_head_dim)
         k_head_dim = head_dim
-        v_head_dim = 0
+        v_head_dim = head_dim
+        # v_head_dim = 0
         num_attention_heads = hf_config.num_attention_heads
         num_key_value_heads = 1
+        hf_config.torch_dtype = 'float16'
         init_kwargs = dict(attn_implementation='eager')
         return ModelConfig(hidden_size=hf_config.hidden_size,
                            num_layers=hf_config.num_hidden_layers,

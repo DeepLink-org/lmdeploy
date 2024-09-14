@@ -7,7 +7,7 @@ from typing import Callable
 
 @dataclass
 class DeviceContext:
-    device_type: str = 'cuda'
+    device_type: str = 'muxi'
 
 
 DefaultContext = DeviceContext()

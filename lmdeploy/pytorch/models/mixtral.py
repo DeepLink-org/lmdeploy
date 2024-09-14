@@ -2,6 +2,7 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 import torch.distributed as dist
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
@@ -155,6 +156,153 @@ class PatchedMixtralAttention(nn.Module):
         )
 
 
+class PatchedMixtralAttentionMuxi(nn.Module):
+    """Rewrite module of MixtralAttention."""
+
+    def _load_weights(self, loader, rank: int, world_size: int,
+                      device: torch.device):
+        """load weights."""
+        for mod_name in ['q_proj', 'k_proj', 'v_proj']:
+            colwise_parallelize_linear(getattr(self, mod_name),
+                                       loader,
+                                       rank=rank,
+                                       world_size=world_size,
+                                       prefix=mod_name)
+        rowwise_parallelize_linear(self.o_proj,
+                                   loader,
+                                   rank=rank,
+                                   world_size=world_size,
+                                   prefix='o_proj')
+
+    @classmethod
+    def _distribute_output_fn(cls, outputs, **kwargs):
+        """Distribution output hook."""
+        dist.all_reduce(outputs[0])
+        return outputs
+
+    def _contiguous_batching_forward_impl(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        output_attentions: bool = False,
+        attention_mask: Optional[torch.Tensor] = None,
+        world_size: int = 1,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor],
+               Optional[Tuple[torch.Tensor]]]:
+        """default rewrite."""
+
+        context = self.context.context
+        kv_seq_length = context.kv_seq_length
+        q_seq_length = context.q_seq_length
+        q_start_loc = context.q_start_loc
+        block_offsets = context.block_offsets
+        max_q_seq_length = context.max_q_seq_length
+        max_kv_seq_length = context.max_kv_seq_length
+
+        num_heads = self.num_heads // world_size
+        num_kv_heads = self.num_key_value_heads // world_size
+        hidden_size = num_heads * self.head_dim
+
+        def __qkv_proj(hidden_states):
+            """qkv proj."""
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
+
+            return query_states, key_states, value_states
+
+        def __rotary_emb_fn(query_states, key_states, value_states):
+            if hasattr(self, 'rotary_emb'):
+                if not hasattr(context, 'cos_sin_cache'):
+                    cos, sin = self.rotary_emb(value_states,
+                                               seq_len=max_kv_seq_length)
+                    cos = cos.squeeze(0)
+                    cos = cos[..., :cos.shape[-1] // 2]
+                    sin = sin.squeeze(0)
+                    sin = sin[..., :sin.shape[-1] // 2]
+                    cos_sin_cache = torch.cat((cos, sin), dim=-1)
+                    context.cos_sin_cache = cos_sin_cache
+
+                query_states, key_states = apply_rotary_pos_emb(
+                    query_states,
+                    key_states,
+                    context.position_ids_1d,
+                    self.head_dim,
+                    context)
+            return query_states.view(-1, num_heads, self.head_dim), key_states.view(-1, num_kv_heads, self.head_dim), value_states
+
+        query_states, key_states, value_states = __qkv_proj(hidden_states)
+
+        query_states = query_states.view(-1, num_heads * self.head_dim)
+        key_states = key_states.view(-1, num_kv_heads * self.head_dim)
+        value_states = value_states.view(-1, num_kv_heads, self.head_dim)
+
+        query_states, key_states, value_states = __rotary_emb_fn(
+            query_states, key_states, value_states)
+
+        # fill kv cache
+        fill_kv_cache(
+            key_states,
+            value_states,
+            past_key_value[0],
+            past_key_value[1],
+            q_start_loc,
+            q_seq_length,
+            kv_seq_length=kv_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            block_offsets=block_offsets,
+            context=context,
+        )
+        # page attention
+        attn_output = query_states
+        window_size = self.config.sliding_window or -1
+        paged_attention_fwd(
+            query_states,
+            key_states,
+            value_states,
+            past_key_value[0],
+            past_key_value[1],
+            attn_output,
+            block_offsets,
+            q_seqlens=q_seq_length,
+            kv_seqlens=kv_seq_length,
+            max_q_seq_length=max_q_seq_length,
+            max_kv_seq_length=max_kv_seq_length,
+            window_size=window_size,
+            context=context,
+        )
+
+        attn_output = attn_output.reshape(*hidden_states.shape[:-1],
+                                          hidden_size)
+
+        attn_output = self.o_proj(attn_output)
+        return attn_output, None, past_key_value
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor],
+               Optional[Tuple[torch.Tensor]]]:
+        """Rewrite of MistralAttention.forward."""
+        world_size = 1
+        if dist.is_initialized():
+            world_size = dist.get_world_size()
+        return self._contiguous_batching_forward_impl(
+            hidden_states,
+            position_ids,
+            past_key_value,
+            output_attentions,
+            attention_mask=attention_mask,
+            world_size=world_size,
+        )
+
+
 class PatchedMixtralBLockSparseTop2MLP(nn.Module):
 
     def _load_weights(self, loader, rank: int, world_size: int,
@@ -247,6 +395,73 @@ class PatchedMixtralSparseMoeBlock(nn.Module):
                                self.down_weights,
                                topk_weights,
                                topk_ids,
+                               topk=self.top_k,
+                               renormalize=True)
+
+        out_states = out_states.reshape(batch_size, sequence_length, -1)
+        return out_states, router_logits
+
+
+class PatchedMixtralSparseMoeBlockMuxi(nn.Module):
+
+    def _update_model_fn(self):
+        """update model."""
+        num_experts = self.num_experts
+
+        def __get_meta():
+            exp = self.experts[0]
+            ffn_dim = exp.w1.weight.size(0)
+            hidden_dim = exp.w2.weight.size(0)
+            dtype = exp.w1.weight.dtype
+            device = exp.w1.weight.device
+            return ffn_dim, hidden_dim, dtype, device
+
+        def __copy_assign_param(param, weight):
+            """copy assign."""
+            weight.copy_(param.data)
+            param.data = weight
+
+        ffn_dim, hidden_dim, dtype, device = __get_meta()
+
+        gate_up_weights = torch.empty(num_experts,
+                                      ffn_dim * 2,
+                                      hidden_dim,
+                                      device=device,
+                                      dtype=dtype)
+        down_weights = torch.empty(num_experts,
+                                   hidden_dim,
+                                   ffn_dim,
+                                   device=device,
+                                   dtype=dtype)
+        for exp_id, exp in enumerate(self.experts):
+            __copy_assign_param(exp.w1.weight,
+                                gate_up_weights[exp_id, :ffn_dim])
+            __copy_assign_param(exp.w3.weight, gate_up_weights[exp_id,
+                                                               ffn_dim:])
+            __copy_assign_param(exp.w2.weight, down_weights[exp_id])
+
+        torch.cuda.empty_cache()
+
+        self.register_buffer('gate_up_weights', gate_up_weights)
+        self.register_buffer('down_weights', down_weights)
+
+    @classmethod
+    def _distribute_output_fn(cls, outputs, **kwargs):
+        """Distribution output hook."""
+        dist.all_reduce(outputs[0])
+        return outputs
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """rewrite moe forward."""
+
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        router_logits = self.gate(hidden_states)
+
+        out_states = fused_moe(hidden_states,
+                               self.gate_up_weights,
+                               self.down_weights,
+                               router_logits,
                                topk=self.top_k,
                                renormalize=True)
 

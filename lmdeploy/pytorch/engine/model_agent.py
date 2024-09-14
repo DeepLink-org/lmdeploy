@@ -28,6 +28,9 @@ logger = get_logger('lmdeploy')
 
 _PATCH_ARG_NAMES = ['context', 'use_origin']
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
+record_count = -1
 
 def _update_cache_config(model_config: ModelConfig,
                          cache_config: CacheConfig,
@@ -494,17 +497,24 @@ def model_forward(
             kv_caches=cache_engine.gpu_cache,
             cache_config=cache_engine.cache_config,
         )
-        output = patched_model.patched_forward(
-            input_ids=inputs.input_ids,
-            position_ids=context.position_ids,
-            attention_mask=context.attention_mask,
-            past_key_values=cache_engine.gpu_cache,
-            return_dict=True,
-            output_attentions=False,
-            output_hidden_states=False,
-            use_origin=False,
-            context=context,
-        )
+        # global record_count
+        # record_count = record_count + 1
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+        if True:
+            with record_function("patched_forward"):
+                output = patched_model.patched_forward(
+                    input_ids=inputs.input_ids,
+                    position_ids=context.position_ids,
+                    attention_mask=context.attention_mask,
+                    past_key_values=cache_engine.gpu_cache,
+                    return_dict=True,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                    use_origin=False,
+                    context=context,
+                )
+        # prof.export_chrome_trace(f"/home/pujiang/zhousl/timeline/forward_{record_count}.json")
+
     return dict(logits=output['logits'], custom_outputs=context._outputs)
 
 
@@ -753,11 +763,14 @@ class BaseModelAgent(AutoModelAgent):
             swap_in_map (SwapMap): Cache maps to swap in.
             swap_out_map (SwapMap): Cache maps to swap out.
         """
-        output = self._forward_impl(inputs,
-                                    swap_in_map=swap_in_map,
-                                    swap_out_map=swap_out_map)
-        await asyncio.get_event_loop().run_in_executor(None,
-                                                       self.stream.synchronize)
+        with record_function("async_forward"):
+            output = self._forward_impl(inputs,
+                                        swap_in_map=swap_in_map,
+                                        swap_out_map=swap_out_map)
+
+        with record_function("run_in_executor"):
+            await asyncio.get_event_loop().run_in_executor(None,
+                                                            self.stream.synchronize)
         return output
 
 
@@ -1242,7 +1255,7 @@ class TPModelAgent(AutoModelAgent):
                                     swap_in_map=swap_in_map,
                                     swap_out_map=swap_out_map)
         await asyncio.get_event_loop().run_in_executor(None,
-                                                       self.stream.synchronize)
+                                                    self.stream.synchronize)
         return output
 
 

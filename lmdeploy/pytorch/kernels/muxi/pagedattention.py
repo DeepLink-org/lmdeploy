@@ -5,7 +5,7 @@ import math
 from torch import Tensor
 
 import vllm._C as vllm_ops
-from maca_extension import ops as ext_ops
+# from maca_extension import ops as ext_ops
 from flash_attn import flash_attn_varlen_func
 
 def make_cu_seqlens(seqlens):
@@ -15,46 +15,46 @@ def make_cu_seqlens(seqlens):
     return cu_seqlens
 
 # TODO: support maca_extension flash_attn_varlen_func
-def ext_flash_attn_varlen_func(
-    query_states,
-    key_states,
-    value_states,
-    cu_seqlens_q,
-    cu_seqlens_kv,
-    max_seqlen_q,
-    max_seqlen_k,
-    dropout_p=0.0,
-    softmax_scale=None,
-    causal=False,
-    window_size=(-1, -1),  # -1 means infinite context window
-    alibi_slopes=None,
-    return_softmax=False,
-):
-    maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
-    query_states, key_states, value_states = [maybe_contiguous(x) for x in (query_states, key_states, value_states)]
+# def ext_flash_attn_varlen_func(
+#     query_states,
+#     key_states,
+#     value_states,
+#     cu_seqlens_q,
+#     cu_seqlens_kv,
+#     max_seqlen_q,
+#     max_seqlen_k,
+#     dropout_p=0.0,
+#     softmax_scale=None,
+#     causal=False,
+#     window_size=(-1, -1),  # -1 means infinite context window
+#     alibi_slopes=None,
+#     return_softmax=False,
+# ):
+#     maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
+#     query_states, key_states, value_states = [maybe_contiguous(x) for x in (query_states, key_states, value_states)]
 
-    out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = ext_ops.flash_attn_varlen_fwd(
-        query_states,
-        key_states,
-        value_states,
-        None,
-        cu_seqlens_q,
-        cu_seqlens_kv,
-        None,
-        alibi_slopes,
-        max_seqlen_q,
-        max_seqlen_k,
-        dropout_p,
-        softmax_scale,
-        False,
-        causal,
-        window_size[0],
-        window_size[1],
-        return_softmax,
-        None,
-    )
+#     out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state = ext_ops.flash_attn_varlen_fwd(
+#         query_states,
+#         key_states,
+#         value_states,
+#         None,
+#         cu_seqlens_q,
+#         cu_seqlens_kv,
+#         None,
+#         alibi_slopes,
+#         max_seqlen_q,
+#         max_seqlen_k,
+#         dropout_p,
+#         softmax_scale,
+#         False,
+#         causal,
+#         window_size[0],
+#         window_size[1],
+#         return_softmax,
+#         None,
+#     )
 
-    return out
+#     return out
 
 def paged_attention_fwd_prefill(
     query_states: Tensor,

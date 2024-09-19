@@ -7,12 +7,15 @@ from lmdeploy.utils import get_logger
 
 from ..base import OpType
 from ..default import DefaultOpsBackend
+from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
+from lmdeploy.utils import get_logger
 
 logger = get_logger('lmdeploy')
 
 
 class AscendOpsBackend(DefaultOpsBackend):
     """ascend layer backend."""
+    eager_mode = True
 
     @staticmethod
     def get_name() -> str:
@@ -28,6 +31,9 @@ class AscendOpsBackend(DefaultOpsBackend):
         elif layer_type == OpType.ApplyRotaryEmb:
             from .apply_rotary_emb import AscendApplyRotaryEmbBuilder
             return AscendApplyRotaryEmbBuilder
+        elif layer_type == OpType.SiluAndMul:
+            from .activation import AscendSiluAndMulBuilder
+            return AscendSiluAndMulBuilder
         elif layer_type == OpType.RMSNorm:
             from .norm import AscendRMSNormBuilder
             return AscendRMSNormBuilder
@@ -37,6 +43,9 @@ class AscendOpsBackend(DefaultOpsBackend):
         elif layer_type == OpType.FusedMoE:
             from .moe import AscendFusedMoEBuilder
             return AscendFusedMoEBuilder
+        elif layer_type == OpType.RotaryEmbedding:
+            from .rotary_embedding import AscendRotaryEmbeddingBuilder
+            return AscendRotaryEmbeddingBuilder
         else:
             logger.debug(
                 f'Op {layer_type} fallback to default implementation.')
@@ -81,9 +90,8 @@ class AscendOpsBackend(DefaultOpsBackend):
         is_unpaged_prefill = False
         q_start_loc_cpu = step_context.q_start_loc.cpu()
         q_seqlens_cpu = step_context.q_seqlens.cpu()
-        kv_seqlens_cpu = step_context.kv_seqlens.cpu()
         max_q_seq_len = torch.max(q_seqlens_cpu).item()
-        max_kv_seq_len = torch.max(kv_seqlens_cpu).item()
+        max_kv_seq_len = torch.max(step_context.kv_seqlens.cpu()).item()
 
         if not step_context.is_decoding:
             is_unpaged_prefill = \
@@ -122,6 +130,17 @@ class AscendOpsBackend(DefaultOpsBackend):
             slots = slot_tables[slot_indices].reshape((-1, 1))
             kv_start_indices.append(slots)
         kv_start_indices = torch.cat(kv_start_indices)
+        if not cls.eager_mode:
+            kv_start_indices = kv_start_indices.flatten().to(torch.int32)
+            import torch._dynamo as dynamo
+            step_context.block_offsets = step_context.block_offsets.to(torch.int32).contiguous()
+            dynamo.mark_dynamic(step_context.block_offsets, [0, 1])
+            if not step_context.is_decoding and is_unpaged_prefill:
+                attention_mask = [mask.half() for mask in attention_mask]
+            kv_seqlens = step_context.kv_seqlens.to(torch.int32)
+        else:
+            kv_seqlens = step_context.kv_seqlens.cpu()
+
 
         attn_meta_cls = cls.get_attention_metadata_cls()
         attn_metadata = attn_meta_cls(
@@ -129,7 +148,7 @@ class AscendOpsBackend(DefaultOpsBackend):
             step_context.block_offsets,
             q_start_loc=q_start_loc_cpu,
             q_seqlens=q_seqlens_cpu,
-            kv_seqlens=kv_seqlens_cpu,
+            kv_seqlens=kv_seqlens,
             kv_start_indices=kv_start_indices,
             block_size=block_size,
             attention_mask=attention_mask,
@@ -140,3 +159,14 @@ class AscendOpsBackend(DefaultOpsBackend):
 
         step_context.attn_metadata = attn_metadata
         return step_context
+
+    @staticmethod
+    def build_graph_runner(model: torch.nn.Module, model_config: ModelConfig,
+                           cache_config: CacheConfig,
+                           backend_config: BackendConfig,
+                           device: torch.device):
+        """build graph runner."""
+        from .graph_runner import AscendGraphRunner
+        AscendOpsBackend.eager_mode = backend_config.eager_mode
+        return AscendGraphRunner(model, model_config, cache_config,
+                                 backend_config, device)

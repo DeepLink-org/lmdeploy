@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import dataclasses
 import json
+import os
 import uuid
 from abc import abstractmethod
 from typing import List, Literal, Optional
@@ -1572,6 +1573,7 @@ def best_match_model(query: str) -> Optional[str]:
     Return:
         str: the possible model name.
     """
+    query = os.path.basename(query.rstrip('/'))
     for name, model in MODELS.module_dict.items():
         if model.match(query):
             return model.match(query)

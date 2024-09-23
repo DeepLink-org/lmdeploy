@@ -36,7 +36,7 @@ def profile(round=6):
 
 
 if __name__ == '__main__': 
-    pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', backend_config = PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
+    pipe = pipeline('/data/models/cogvlm2-llama3-chinese-chat-19b', model_name='cogvlm', backend_config=PytorchEngineConfig(tp=1, device_type='muxi', block_size=16, cache_max_entry_count=0.1))
 
     prompts = [
         {

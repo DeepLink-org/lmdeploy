@@ -34,7 +34,7 @@ def profile(round=6):
 
 
 if __name__ == '__main__': 
-    pipe = pipeline('/data/models/InternVL-Chat-V1-5', backend_config = PytorchEngineConfig(tp=4, device_type='muxi', block_size=16,))
+    pipe = pipeline('/data/models/InternVL-Chat-V1-5', model_name='internvl-internlm2', backend_config=PytorchEngineConfig(tp=4, device_type='muxi', block_size=16,))
 
     prompts = [
         {

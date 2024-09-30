@@ -79,6 +79,7 @@ def auto_awq(model: str,
         download_dir (str): Directory to download and load the weights,
             default to the default cache directory of huggingface.
     """
+    import dlinfer.framework.lmdeploy_ext  # noqa: F401
     if not osp.exists(model):
         print(f'can\'t find model from local_path {model}, '
               'try to download from remote')

@@ -47,15 +47,15 @@ class AscendRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
         device_type = x.device.type
         device_type = device_type if isinstance(
             device_type, str) and device_type != 'mps' else 'cpu'
-        with torch.autocast(device_type=device_type, enabled=False):
-            inv_freq_expanded = inv_freq_expanded
-            position_ids_expanded = position_ids_expanded
-            tmp = torch.bmm(inv_freq_expanded, position_ids_expanded)
-            # tmp = torch.ops.atb.bmm.default(inv_freq_expanded, position_ids_expanded)
-            freqs = tmp.transpose(1, 2)
-            emb = torch.cat((freqs, freqs), dim=-1)
-            cos = emb.cos()
-            sin = emb.sin()
+        # with torch.autocast(device_type=device_type, enabled=False):
+        inv_freq_expanded = inv_freq_expanded
+        position_ids_expanded = position_ids_expanded
+        tmp = torch.bmm(inv_freq_expanded, position_ids_expanded)
+        # tmp = torch.ops.atb.bmm.default(inv_freq_expanded, position_ids_expanded)
+        freqs = tmp.transpose(1, 2)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        cos = emb.cos()
+        sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 

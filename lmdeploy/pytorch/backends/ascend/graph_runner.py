@@ -24,12 +24,12 @@ class AscendGraphRunner(GraphRunner):
         if self.enable_graph:
             self.patch_kernels_custom_op()
             self.patch_kvcache_static_shape()
-            self.model = torch.compile(self.model, dynamic=True, backend='atbgraph')
+            self.model = torch.compile(self.model, fullgraph=True, dynamic=True, backend='atbgraph')
 
     def check_enable_graph(self):
         """check enable graph."""
         return not self.backend_config.eager_mode
-    
+
     def patch_kernels_custom_op(self):
         from dlinfer.utils.graph.custom_op import register_custom_op
         ascend_kernels_module = import_module("lmdeploy.pytorch.kernels.ascend")

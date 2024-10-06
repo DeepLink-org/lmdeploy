@@ -332,7 +332,7 @@ def get_max_batch_size(device_type: str):
     Args:
         device_type (str): the type of device
     """
-    assert device_type in ['cuda', 'ascend']
+    assert device_type in ['cuda', 'ascend', 'camb']
     if device_type == 'cuda':
         max_batch_size_map = {
             'a100': 256,
@@ -349,4 +349,6 @@ def get_max_batch_size(device_type: str):
         # the max_batch_size 128
         return 128
     elif device_type == 'ascend':
+        return 16
+    elif device_type == 'camb':
         return 16

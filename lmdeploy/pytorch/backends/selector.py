@@ -15,5 +15,8 @@ def get_backend():
     if device_type == 'ascend':
         from .dlinfer import AscendOpsBackend
         return AscendOpsBackend
+    if device_type == 'camb':
+        from .camb import CambOpsBackend
+        return CambOpsBackend
     else:
         raise RuntimeError(f'Unsupported device type: {device_type}')

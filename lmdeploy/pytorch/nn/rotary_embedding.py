@@ -2,6 +2,7 @@
 from torch import Tensor, nn
 
 from ..backends import OpType, get_backend
+from ..backends.attention import AttentionMetadata
 from ..backends.rotary_embedding import (Llama3Parameters,
                                          LongRoPEScalingParameters, RopeType,
                                          YarnParameters)
@@ -43,6 +44,7 @@ class ApplyRotaryEmb(nn.Module):
                 key: Tensor,
                 cos: Tensor,
                 sin: Tensor,
+                attn_metadata: AttentionMetadata,
                 inplace: bool = True):
         """forward."""
-        return self.impl.forward(query, key, cos, sin, inplace)
+        return self.impl.forward(query, key, cos, sin, attn_metadata, inplace)

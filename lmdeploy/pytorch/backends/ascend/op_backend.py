@@ -37,6 +37,9 @@ class AscendOpsBackend(DefaultOpsBackend):
         elif layer_type == OpType.FusedMoE:
             from .moe import AscendFusedMoEBuilder
             return AscendFusedMoEBuilder
+        elif layer_type == OpType.Linear:
+            from .linear import AscendLinearBuilder
+            return AscendLinearBuilder
         else:
             logger.debug(
                 f'Op {layer_type} fallback to default implementation.')

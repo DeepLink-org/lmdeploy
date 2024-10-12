@@ -195,12 +195,15 @@ class InternLM2DecoderLayer(nn.Module):
                 hidden_states, residual)
 
         # Self Attention
+        # print("hidden_states before:",torch.mean(hidden_states))
         hidden_states = self.attention(
             hidden_states=hidden_states,
             rotary_pos_emb=rotary_pos_emb,
             past_key_value=past_key_value,
             attn_metadata=attn_metadata,
         )
+        # print("hidden_states after:",torch.mean(hidden_states))
+
 
         # Fully Connected
         hidden_states, residual = self.ffn_norm(hidden_states, residual)

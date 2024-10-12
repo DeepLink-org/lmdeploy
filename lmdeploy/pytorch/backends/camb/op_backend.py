@@ -12,7 +12,7 @@ logger = get_logger('lmdeploy')
 
 
 class CambOpsBackend(DefaultOpsBackend):
-    """ascend layer backend."""
+    """Camb layer backend."""
 
     @staticmethod
     def get_name() -> str:
@@ -21,7 +21,7 @@ class CambOpsBackend(DefaultOpsBackend):
 
     @classmethod
     def get_layer_impl_builder(cls, layer_type: OpType):
-        """get ascend layer builder."""
+        """get Camb layer builder."""
         if layer_type == OpType.Attention:
             from .attention import CambAttentionBuilder
             return CambAttentionBuilder
@@ -94,7 +94,7 @@ class CambOpsBackend(DefaultOpsBackend):
         cu_seqlens_list = cu_seqlens.tolist()
 
         if not step_context.is_decoding:
-            cos_sin_ids = step_context.position_ids[0]
+            cos_sin_ids = step_context.position_ids[0].to(torch.int32)
         else:
             cos_sin_ids = torch.zeros(batch_size, dtype=torch.int32, device=device)
 
@@ -117,12 +117,12 @@ class CambOpsBackend(DefaultOpsBackend):
                 token_loc = (token_loc + 1) % block_size
                 block_idx = block_idx if token_loc else block_idx + 1
                 block_loc = step_context.block_offsets[i][block_idx]
-        kv_start_indices = torch.tensor(kv_start_indices, device=device)
+        kv_start_indices = torch.tensor(kv_start_indices, device=device, dtype=torch.int32)
 
         attn_meta_cls = cls.get_attention_metadata_cls()
         attn_metadata = attn_meta_cls(
             step_context.is_decoding,
-            step_context.block_offsets,
+            step_context.block_offsets.to(torch.int32),
             q_start_loc=q_start_loc,
             q_seqlens=q_seqlens,
             kv_seqlens=kv_seqlens,

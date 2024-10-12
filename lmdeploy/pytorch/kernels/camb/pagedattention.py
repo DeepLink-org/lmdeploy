@@ -36,7 +36,8 @@ def prefill_attention(
             num_q_heads,
             num_kv_heads,
             attn_mask,
-            softmax_scale=1.0,
+            # softmax_scale=1.0,
+            softmax_scale = 1. / math.sqrt(query_states.shape[-1]),
             attn_output=output)
         attn_output.copy_(output)
         return attn_output
@@ -51,7 +52,6 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
     #attn_output = attn_output.unsqueeze(1)
 
     max_kv_seq_len = torch.max(kv_seq_len)
-
     ret = ext_ops.paged_decode_attention(
         q,
         k_cache,
@@ -65,7 +65,6 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
         softmax_scale = 1. / math.sqrt(q.shape[-1]),
         attn_output = q,
     )
-
     return q
 
 

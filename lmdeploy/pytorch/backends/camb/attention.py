@@ -17,8 +17,7 @@ class CambAttentionMetadata(AttentionMetadata):
     cos_sin_ids: Optional[Tensor] = None
     max_q_seq_len: int = 1
     max_kv_seq_len: int = 1
-
-
+    
 class CambAttentionImpl(AttentionImpl[CambAttentionMetadata]):
     """camb attention implementation."""
 
@@ -45,7 +44,6 @@ class CambAttentionImpl(AttentionImpl[CambAttentionMetadata]):
             logit_softcapping,
             **kwargs,
         )
-
         from lmdeploy.pytorch.kernels.camb import (fill_kv_cache,
                                                      paged_attention_fwd)
         self.fill_kv_cache = fill_kv_cache
@@ -62,7 +60,6 @@ class CambAttentionImpl(AttentionImpl[CambAttentionMetadata]):
         inplace: bool = True,
     ) -> Tensor:
         """forward."""
-
         block_offsets = attn_metadata.block_offsets
         q_start_loc = attn_metadata.q_start_loc
         q_seqlens = attn_metadata.q_seqlens
@@ -77,8 +74,9 @@ class CambAttentionImpl(AttentionImpl[CambAttentionMetadata]):
         cu_seqlens = attn_metadata.cu_seqlens
 
         # fill kv cache
-        k_cache, v_cache = self.fill_kv_cache(key, value, k_cache, v_cache,
-                                              kv_start_indices)
+        # k_cache, v_cache = self.fill_kv_cache(key, value, k_cache, v_cache,
+        #                                       kv_start_indices)
+        self.fill_kv_cache(key, value, k_cache, v_cache, kv_start_indices)
 
         if inplace:
             attn_output = query[..., :self.v_head_size]
@@ -86,7 +84,7 @@ class CambAttentionImpl(AttentionImpl[CambAttentionMetadata]):
             q_shape = query.shape
             o_shape = q_shape[:-1] + (self.v_head_size, )
             attn_output = query.new_empty(o_shape)
-
+            
         attn_output = self.paged_attention_fwd(
             query,
             key,

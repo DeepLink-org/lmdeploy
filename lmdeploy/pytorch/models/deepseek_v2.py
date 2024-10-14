@@ -260,12 +260,17 @@ class DeepseekV2Attention(nn.Module):
         query_states[..., nope_size:] = q_pe
         key_states[..., nope_size:] = k_pe
 
+        head_dim = key_states.shape[-1]
+        
+        value_states = torch.nn.functional.pad(value_states, [0, head_dim - nope_size], value=0).contiguous()
+
         attn_output = self.attn_fwd(
             query_states,
             key_states,
             value_states,
             past_key_value[0],
-            past_key_value[0][..., :nope_size],
+            past_key_value[1],
+            # past_key_value[0][..., :nope_size],
             attn_metadata,
             inplace=True,
         )

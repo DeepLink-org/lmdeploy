@@ -139,6 +139,7 @@ def model_forward(
         # forward
         inputs = inputs.to_device('cuda')
         ctx_mgr = model.ctx_mgr
+        # import pdb; pdb.set_trace()
         context = ctx_mgr.build_context(
             inputs=inputs,
             world_size=world_size,
@@ -146,6 +147,7 @@ def model_forward(
         )
         if inputs.adapter_info is not None:
             inputs.adapter_info.update_offsets(model.rank_offsets)
+        # import pdb; pdb.set_trace()
         with ctx_mgr.context(context):
             input_dict = model.prepare_inputs_for_generation(
                 past_key_values=cache_engine.gpu_cache,
@@ -242,8 +244,11 @@ class BaseModelAgent(AutoModelAgent):
 
         self.patched_model = self._build_model(model_path, device=device)
 
+        # import pdb; pdb.set_trace()
+
         _update_cache_config(model_config, cache_config)
 
+        # import pdb; pdb.set_trace()
         backend = get_backend()
         self.patched_model = backend.build_graph_runner(
             self.patched_model,
@@ -251,7 +256,7 @@ class BaseModelAgent(AutoModelAgent):
             cache_config=cache_config,
             backend_config=backend_config,
             device=device)
-
+        # import pdb; pdb.set_trace()
         self.cache_engine = CacheEngine(cache_config, model_config)
 
         self._target_infos = None
@@ -296,6 +301,7 @@ class BaseModelAgent(AutoModelAgent):
         cache_swapping(self.cache_engine,
                        swap_in_map=swap_in_map,
                        swap_out_map=swap_out_map)
+        # import pdb; pdb.set_trace()
         output = model_forward(
             self.patched_model,
             inputs,

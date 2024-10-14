@@ -7,9 +7,8 @@ from lmdeploy import PytorchEngineConfig
 if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
-    pipe = lmdeploy.pipeline("/data/models/Qwen-14B-Chat",
-    # pipe = lmdeploy.pipeline("/data/models/Qwen2-7B-Instruct",
-                            backend_config=PytorchEngineConfig(tp=1,
+    pipe = lmdeploy.pipeline("/data/models/Mixtral-8x7B-Instruct-v0___1",
+                            backend_config=PytorchEngineConfig(tp=4,
                                                                 block_size=256,
                                                                 device_type='maca',
                                                                 cache_max_entry_count=0.4))

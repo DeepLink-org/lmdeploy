@@ -1,0 +1,43 @@
+running develop
+running egg_info
+writing lmdeploy.egg-info/PKG-INFO
+writing dependency_links to lmdeploy.egg-info/dependency_links.txt
+writing entry points to lmdeploy.egg-info/entry_points.txt
+writing requirements to lmdeploy.egg-info/requires.txt
+writing top-level names to lmdeploy.egg-info/top_level.txt
+reading manifest file 'lmdeploy.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+/opt/conda/lib/python3.8/site-packages/setuptools/dist.py:770: UserWarning: Usage of dash-separated 'index-url' will not be supported in future versions. Please use the underscore name 'index_url' instead
+  warnings.warn(
+/opt/conda/lib/python3.8/site-packages/setuptools/installer.py:27: SetuptoolsDeprecationWarning: setuptools.installer is deprecated. Requirements should be satisfied by a PEP 517 installer.
+  warnings.warn(
+/opt/conda/lib/python3.8/site-packages/setuptools/command/easy_install.py:144: EasyInstallDeprecationWarning: easy_install command is deprecated. Use build and pip and other standards-based tools.
+  warnings.warn(
+/opt/conda/lib/python3.8/site-packages/setuptools/command/install.py:34: SetuptoolsDeprecationWarning: setup.py install is deprecated. Use build and pip and other standards-based tools.
+  warnings.warn(
+warning: no files found matching 'lmdeploy/lib/*.so'
+warning: no files found matching 'lmdeploy/lib/*.so*'
+warning: no files found matching 'lmdeploy/lib/*.dll'
+warning: no files found matching 'lmdeploy/lib/*.pyd'
+warning: no files found matching 'lmdeploy/bin/*'
+adding license file 'LICENSE'
+writing manifest file 'lmdeploy.egg-info/SOURCES.txt'
+running build_ext
+Creating /opt/conda/lib/python3.8/site-packages/lmdeploy.egg-link (link to .)
+lmdeploy 0.6.0a0 is already the active version in easy-install.pth
+Installing lmdeploy script to /opt/conda/bin
+
+Installed /home/pujiang/zhousl/lmdeploy
+Processing dependencies for lmdeploy==0.6.0a0
+Searching for openai
+Reading https://mirrors.aliyun.com/pypi/simple/openai/
+Downloading https://mirrors.aliyun.com/pypi/packages/3d/49/72198d0941b3a0264b6d13033823025c01c497f1cbfd83db310392c49c0e/openai-1.51.2-py3-none-any.whl#sha256=5c5954711cba931423e471c37ff22ae0fd3892be9b083eee36459865fbbb83fa
+Best match: openai 1.51.2
+Processing openai-1.51.2-py3-none-any.whl
+Installing openai-1.51.2-py3-none-any.whl to /opt/conda/lib/python3.8/site-packages
+Adding openai 1.51.2 to easy-install.pth file
+Installing openai script to /opt/conda/bin
+
+Installed /opt/conda/lib/python3.8/site-packages/openai-1.51.2-py3.8.egg
+Searching for jiter<1,>=0.4.0
+Reading https://mirrors.aliyun.com/pypi/simple/jiter/

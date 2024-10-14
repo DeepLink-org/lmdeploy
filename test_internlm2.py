@@ -7,13 +7,13 @@ from lmdeploy import PytorchEngineConfig
 if __name__ == "__main__":
     torch.manual_seed(10)
     random.seed(10)
-    pipe = lmdeploy.pipeline("/data/models/Qwen-14B-Chat",
-    # pipe = lmdeploy.pipeline("/data/models/Qwen2-7B-Instruct",
+    # pipe = lmdeploy.pipeline("/data/models/internlm2-chat-7b",
+    pipe = lmdeploy.pipeline("/data/models/internlm2_5-7b-chat",
                             backend_config=PytorchEngineConfig(tp=1,
                                                                 block_size=256,
                                                                 device_type='maca',
                                                                 cache_max_entry_count=0.4))
-    # warm up
+# warm up
     print("warm up:")
     response = pipe("How are you?", do_preprocess=True)
     print(response.text)

@@ -119,6 +119,7 @@ class CacheEngine:
         head_size = self.model_config.k_head_dim
         if head_size is None:
             head_size = self.model_config.head_dim
+        # import pdb; pdb.set_trace()
         return self._get_key_block_shape_impl(
             self.model_config,
             block_size=self.block_size,
@@ -133,6 +134,7 @@ class CacheEngine:
         head_size = self.model_config.v_head_dim
         if head_size is None:
             head_size = self.model_config.head_dim
+        # import pdb; pdb.set_trace()
         return self._get_value_block_shape_impl(
             self.model_config,
             block_size=self.block_size,
@@ -144,8 +146,10 @@ class CacheEngine:
     def allocate_gpu_cache(self):
         """allocate caches on GPU."""
         gpu_cache: List[KVCache] = []
+        # import pdb; pdb.set_trace()
         key_block_shape = self.get_key_block_shape(local=True)
         value_block_shape = self.get_value_block_shape(local=True)
+        # import pdb; pdb.set_trace()
 
         for _ in range(self.num_layers):
             key_blocks = torch.empty(

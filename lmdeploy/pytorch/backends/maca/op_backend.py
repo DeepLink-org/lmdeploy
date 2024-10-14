@@ -54,6 +54,9 @@ class MacaOpsBackend(DefaultOpsBackend):
         head_size: int,
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
+        if head_size == 576:
+            x = 16
+            return(num_heads, head_size // x, block_size, x)
         return (num_heads, block_size, head_size)
 
     @staticmethod
@@ -63,12 +66,15 @@ class MacaOpsBackend(DefaultOpsBackend):
         head_size: int,
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
+        if head_size == 0:
+            return(num_heads, block_size, 576)
         return (num_heads, block_size, head_size)
 
     @classmethod
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
+        # import pdb; pdb.set_trace()
         block_size = step_context.kv_caches[0][0].size(-2)
         device = step_context.block_offsets.device
 

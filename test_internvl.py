@@ -1,0 +1,78 @@
+# from infer_ext.framework import lmdeploy_ext
+import torch
+import random
+
+from lmdeploy import pipeline
+from lmdeploy import PytorchEngineConfig
+from lmdeploy.vl import load_image
+
+
+if __name__ == '__main__': 
+    torch.manual_seed(10)
+    random.seed(10)
+    # pipe = pipeline('/data/models/InternVL2-8B',
+    pipe = pipeline('/data/models/InternVL2-26B',
+    # pipe = pipeline('/data/models/InternVL2-Llama3-76B',
+                    backend_config=PytorchEngineConfig(tp=2,
+                                                        block_size=256,
+                                                        device_type='maca',
+                                                        cache_max_entry_count=0.4))
+    prompts = [
+        {
+            'role': 'user',
+            'content': [
+                {'type': 'text', 'text': 'describe this image'},
+                {'type': 'image_url', 'image_url': {'url': 'https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg'}}
+            ]
+        }
+    ]
+
+    # image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/tests/data/tiger.jpeg')
+    image = load_image("/home/pujiang/zhousl/data/tiger.jpeg")
+
+    # warm up
+    print("warm up:")
+    response = pipe("How are you?", do_preprocess=True)
+    print(response.text)
+    print()
+
+    # test image
+    print("test image:")
+    response = pipe(("describe the image:", image))
+    print(response.text)
+    print()
+
+    # print("test multi batch:")
+    question = ["Please introduce Shanghai."]
+    question = ["What functions do you have?"]
+    question = ["How are you?", "Please introduce Shanghai."]
+    response = pipe(question, do_preprocess=True)
+    for idx, r in enumerate(response):
+        print(f"Q: {question[idx]}")
+        print(f"A: {r.text}")
+        print()
+
+    # image = load_image('https://raw.githubusercontent.com/open-mmlab/mmdeploy/main/demo/resources/human-pose.jpg')
+    image = load_image("/home/pujiang/zhousl/data/human_pose.jpg")
+    
+    # test multi session
+    print("test multi session(only text):")
+    # question = ("Please introduce Shanghai.")
+    question = ("who are the president of USA?")
+    sess = pipe.chat(question)
+    print("session 1: ", sess)
+
+    question = "please introduce his family."
+    # question = "What's the key point of your description above?"
+    sess = pipe.chat(question, session=sess)
+    print("session 2: ", sess)
+    print()
+    
+    print("test multi session(text and image):")
+    question = "please describe this image:"
+    sess = pipe.chat((question, image))
+    print("session 1: ", sess)
+    question = "What's the key point of your description above?"
+    sess = pipe.chat(question, session=sess)
+    print("session 2: ", sess)
+    print()

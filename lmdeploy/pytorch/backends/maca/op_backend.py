@@ -11,32 +11,32 @@ from ..default import DefaultOpsBackend
 logger = get_logger('lmdeploy')
 
 
-class AscendOpsBackend(DefaultOpsBackend):
-    """ascend layer backend."""
+class MacaOpsBackend(DefaultOpsBackend):
+    """Maca layer backend."""
 
     @staticmethod
     def get_name() -> str:
         """backend name."""
-        return 'ascend'
+        return 'Maca'
 
     @classmethod
     def get_layer_impl_builder(cls, layer_type: OpType):
-        """get ascend layer builder."""
+        """get Maca layer builder."""
         if layer_type == OpType.Attention:
-            from .attention import AscendAttentionBuilder
-            return AscendAttentionBuilder
+            from .attention import MacaAttentionBuilder
+            return MacaAttentionBuilder
         elif layer_type == OpType.ApplyRotaryEmb:
-            from .apply_rotary_emb import AscendApplyRotaryEmbBuilder
-            return AscendApplyRotaryEmbBuilder
+            from .apply_rotary_emb import MacaApplyRotaryEmbBuilder
+            return MacaApplyRotaryEmbBuilder
         elif layer_type == OpType.RMSNorm:
-            from .norm import AscendRMSNormBuilder
-            return AscendRMSNormBuilder
+            from .norm import MacaRMSNormBuilder
+            return MacaRMSNormBuilder
         elif layer_type == OpType.SoftmaxTopK:
-            from .moe import AscendSoftmaxTopKBuilder
-            return AscendSoftmaxTopKBuilder
+            from .moe import MacaSoftmaxTopKBuilder
+            return MacaSoftmaxTopKBuilder
         elif layer_type == OpType.FusedMoE:
-            from .moe import AscendFusedMoEBuilder
-            return AscendFusedMoEBuilder
+            from .moe import MacaFusedMoEBuilder
+            return MacaFusedMoEBuilder
         else:
             logger.debug(
                 f'Op {layer_type} fallback to default implementation.')
@@ -44,8 +44,8 @@ class AscendOpsBackend(DefaultOpsBackend):
 
     @staticmethod
     def get_attention_metadata_cls():
-        from .attention import AscendAttentionMetadata
-        return AscendAttentionMetadata
+        from .attention import MacaAttentionMetadata
+        return MacaAttentionMetadata
 
     @staticmethod
     def get_k_block_shape(
@@ -55,11 +55,6 @@ class AscendOpsBackend(DefaultOpsBackend):
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
         return (num_heads, block_size, head_size)
-        # return (
-        #     block_size,
-        #     num_heads * head_size,
-        # )
-
 
     @staticmethod
     def get_v_block_shape(
@@ -69,17 +64,12 @@ class AscendOpsBackend(DefaultOpsBackend):
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
         return (num_heads, block_size, head_size)
-        return (
-            block_size,
-            num_heads * head_size,
-        )
 
     @classmethod
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
         block_size = step_context.kv_caches[0][0].size(-2)
-        # _, block_size, _ = step_context.kv_caches[0][0].shape
         device = step_context.block_offsets.device
 
         is_unpaged_prefill = False

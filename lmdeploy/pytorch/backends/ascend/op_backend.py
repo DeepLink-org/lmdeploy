@@ -3,12 +3,11 @@ from typing import Tuple
 
 import torch
 
+from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
 from lmdeploy.utils import get_logger
 
 from ..base import OpType
 from ..default import DefaultOpsBackend
-from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
-from lmdeploy.utils import get_logger
 
 logger = get_logger('lmdeploy')
 
@@ -16,6 +15,7 @@ logger = get_logger('lmdeploy')
 class AscendOpsBackend(DefaultOpsBackend):
     """ascend layer backend."""
     eager_mode = True
+    half_negative_inf = torch.finfo(torch.float16).min
 
     @staticmethod
     def get_name() -> str:
@@ -133,14 +133,25 @@ class AscendOpsBackend(DefaultOpsBackend):
         if not cls.eager_mode:
             kv_start_indices = kv_start_indices.flatten().to(torch.int32)
             import torch._dynamo as dynamo
-            step_context.block_offsets = step_context.block_offsets.to(torch.int32).contiguous()
+            block_offsets_int32 = step_context.block_offsets.to(torch.int32)
+            step_context.block_offsets = block_offsets_int32.repeat_interleave(
+                step_context.q_seqlens, 0)
             dynamo.mark_dynamic(step_context.block_offsets, [0, 1])
-            if not step_context.is_decoding and is_unpaged_prefill:
-                attention_mask = [mask.half() for mask in attention_mask]
             kv_seqlens = step_context.kv_seqlens.to(torch.int32)
+            if not step_context.is_decoding:
+                if is_unpaged_prefill:
+                    attention_mask = [mask.half() for mask in attention_mask]
+                else:
+                    attention_mask = [
+                        torch.cat([
+                            mask.half() * cls.half_negative_inf
+                            for mask in attention_mask
+                        ]).unsqueeze(1)
+                    ]
+                    kv_seqlens = kv_seqlens.repeat_interleave(
+                        step_context.q_seqlens, 0)
         else:
             kv_seqlens = step_context.kv_seqlens.cpu()
-
 
         attn_meta_cls = cls.get_attention_metadata_cls()
         attn_metadata = attn_meta_cls(

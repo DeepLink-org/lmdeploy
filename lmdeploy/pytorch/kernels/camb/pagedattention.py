@@ -49,9 +49,7 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
     num_q_heads = q.shape[1]
     num_kv_heads = k_cache.shape[1]
     q = q.unsqueeze(1)
-    #attn_output = attn_output.unsqueeze(1)
-
-    max_kv_seq_len = torch.max(kv_seq_len)
+    
     ret = ext_ops.paged_decode_attention(
         q,
         k_cache,

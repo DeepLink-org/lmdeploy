@@ -31,9 +31,9 @@ class CambOpsBackend(DefaultOpsBackend):
         elif layer_type == OpType.RMSNorm:
             from .norm import CambRMSNormBuilder
             return CambRMSNormBuilder
-        #elif layer_type == OpType.RotaryEmbedding:
-        #    from .rotary_embedding import CambRotaryEmbeddingBuilder
-        #    return CambRotaryEmbeddingBuilder
+        elif layer_type == OpType.SiluAndMul:
+            from .activation import CambSiluAndMulBuilder
+            return CambSiluAndMulBuilder
         else:
             logger.debug(
                 f'Op {layer_type} fallback to default implementation.')

@@ -25,10 +25,10 @@ class MacaOpsBackend(DlinferOpsBackend):
         head_size: int,
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
-        return (
-            block_size,
-            num_heads * head_size,
-        )
+        if head_size == 576:
+            x = 16
+            return (num_heads, head_size // x, block_size, x)
+        return (num_heads, block_size, head_size)
 
     @staticmethod
     def get_v_block_shape(
@@ -37,16 +37,13 @@ class MacaOpsBackend(DlinferOpsBackend):
         head_size: int,
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
-        return (
-            block_size,
-            num_heads * head_size,
-        )
+        return (num_heads, block_size, head_size)
 
     @classmethod
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
-        block_num, block_size, _ = step_context.kv_caches[0][0].shape
+        block_num, _, block_size, _ = step_context.kv_caches[0][0].shape
         device = step_context.block_offsets.device
 
         is_unpaged_prefill = False

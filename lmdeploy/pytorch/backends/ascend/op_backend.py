@@ -16,6 +16,7 @@ class AscendOpsBackend(DefaultOpsBackend):
     """ascend layer backend."""
     eager_mode = True
     half_negative_inf = torch.finfo(torch.float16).min
+    total_slots = None 
 
     @staticmethod
     def get_name() -> str:

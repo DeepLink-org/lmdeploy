@@ -186,6 +186,23 @@ class AscendOpsBackend(DefaultOpsBackend):
                     step_context.q_seqlens, 0)
             kv_seqlens = kv_seqlens_cpu
 
+        attn_meta_cls = cls.get_attention_metadata_cls()
+        attn_metadata = attn_meta_cls(
+            step_context.is_decoding,
+            step_context.block_offsets,
+            q_start_loc=q_start_loc_cpu,
+            q_seqlens=q_seqlens_cpu,
+            kv_seqlens=kv_seqlens,
+            kv_start_indices=kv_start_indices,
+            block_size=block_size,
+            attention_mask=attention_mask,
+            is_unpaged_prefill=is_unpaged_prefill,
+            max_q_seq_len=max_q_seq_len,
+            max_kv_seq_len=max_kv_seq_len,
+        )
+
+        step_context.attn_metadata = attn_metadata
+        return step_context
 
     @staticmethod
     def build_graph_runner(model: torch.nn.Module, model_config: ModelConfig,

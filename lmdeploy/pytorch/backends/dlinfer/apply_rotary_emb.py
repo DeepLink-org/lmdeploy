@@ -14,7 +14,6 @@ class DlinferApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
                 key: Tensor,
                 cos: Tensor,
                 sin: Tensor,
-                cu_seqlens: Tensor,
                 inplace: bool = True):
         """forward."""
         if inplace:
@@ -23,7 +22,7 @@ class DlinferApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
         else:
             q_embed = torch.empty_like(query)
             k_embed = torch.empty_like(key)
-        return apply_rotary_pos_emb(query, key, cos, sin, q_embed, k_embed, cu_seqlens)
+        return apply_rotary_pos_emb(query, key, cos, sin, q_embed, k_embed)
 
 
 class DlinferApplyRotaryEmbBuilder(ApplyRotaryEmbBuilder):

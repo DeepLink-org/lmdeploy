@@ -99,6 +99,7 @@ class CambOpsBackend(DlinferOpsBackend):
             max_kv_seq_len=max_kv_seq_len,
             cu_seqlens=cu_seqlens,
             is_flash_attn_support_inplace=False,
+            is_mock_q_start_loc=True,
         )
 
         step_context.attn_metadata = attn_metadata

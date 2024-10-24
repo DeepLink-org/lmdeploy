@@ -122,7 +122,6 @@ class ApplyRotaryEmb(nn.Module):
                 key: Tensor,
                 cos: Tensor,
                 sin: Tensor,
-                cu_seqlens: Tensor,
                 inplace: bool = True):
         """forward."""
-        return self.impl.forward(query, key, cos, sin, cu_seqlens, inplace)
+        return self.impl.forward(query, key, cos, sin, inplace)

@@ -10,11 +10,13 @@ from ..attention import AttentionBuilder, AttentionImpl, AttentionMetadata
 @dataclass
 class DlinferAttentionMetadata(AttentionMetadata):
     kv_start_indices: Optional[Tensor] = None
-    block_size: int = 64
+    block_size: int = 16
     attention_mask: Sequence[Tensor] = tuple()
     is_unpaged_prefill: Optional[bool] = None
     max_q_seq_len: int = 1
     max_kv_seq_len: int = 1
+    cu_seqlens: Optional[Tensor] = None
+    cos_sin_ids: Optional[Tensor] = None
 
 
 class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
@@ -74,6 +76,7 @@ class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
         is_unpaged_prefill = attn_metadata.is_unpaged_prefill
         max_q_seq_len = attn_metadata.max_q_seq_len
         max_kv_seq_len = attn_metadata.max_kv_seq_len
+        cu_seqlens = attn_metadata.cu_seqlens
 
         # fill kv cache
         k_cache, v_cache = self.fill_kv_cache(key, value, k_cache, v_cache,
@@ -101,6 +104,7 @@ class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
             max_kv_seq_len=max_kv_seq_len,
             is_decoding=is_decoding,
             block_size=block_size,
+            cu_seqlens=cu_seqlens,
             attn_mask=attn_mask,
             is_unpaged_prefill=is_unpaged_prefill,
         )

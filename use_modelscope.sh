@@ -1,1 +1,0 @@
-export LMDEPLOY_USE_MODELSCOPE=True

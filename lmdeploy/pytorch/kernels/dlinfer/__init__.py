@@ -8,6 +8,7 @@ from .linear import linear
 from .moe_gating_topk_softmax import moe_gating_topk_softmax
 from .pagedattention import paged_attention_fwd
 from .rms_norm import rms_norm
+from .activation import silu_and_mul
 
 __all__ = [
     'rms_norm',
@@ -19,4 +20,5 @@ __all__ = [
     'linear',
     'moe_gating_topk_softmax',
     'multinomial_sampling',
+    'silu_and_mul',
 ]

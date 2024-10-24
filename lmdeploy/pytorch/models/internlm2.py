@@ -74,7 +74,7 @@ class InternLM2Attention(nn.Module):
         qkv_states = qkv_states.flatten(0, -2)
         query_states, key_states, value_states = self.wqkv.split_qkv(
             qkv_states)
-        
+
         # apply rotary embedding
         cos, sin = rotary_pos_emb
         query_states, key_states = self.apply_rotary_pos_emb(
@@ -86,7 +86,7 @@ class InternLM2Attention(nn.Module):
             inplace=True,
         )
 
-        #attention
+        # attention
         attn_output = self.attn_fwd(
             query_states,
             key_states,
@@ -138,13 +138,13 @@ class InternLM2MLP(nn.Module):
                                        dtype=dtype,
                                        device=device,
                                        is_tp=True)
-    
-    @torch.profiler.record_function("MLP")
+
     def forward(self, x):
         """forward."""
         gate_up = self.gate_up_proj(x)
         act = self.act_fn(gate_up)
         return self.w2(act)
+
 
 class InternLM2DecoderLayer(nn.Module):
     """decoder layer."""
@@ -186,7 +186,7 @@ class InternLM2DecoderLayer(nn.Module):
         residual: Optional[torch.Tensor] = None,
         attn_metadata: Any = None,
     ):
-        
+
         if residual is None:
             residual = hidden_states
             hidden_states = self.attention_norm(hidden_states)
@@ -303,7 +303,7 @@ class InternLM2Model(nn.Module):
 
         # norm
         hidden_states, _ = self.norm(hidden_states, residual)
-        
+
         return hidden_states
 
     def get_input_embeddings(self):
@@ -440,3 +440,4 @@ class InternLM2ForCausalLM(nn.Module, CudaGraphMixin):
                 else:
                     param = params_dict[name]
                     load_weight(param, loaded_weight)
+

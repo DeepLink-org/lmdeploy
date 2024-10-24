@@ -19,7 +19,7 @@ def get_backend():
         from .dlinfer import MacaOpsBackend
         return MacaOpsBackend
     if device_type == 'camb':
-        from .camb import CambOpsBackend
+        from .dlinfer import CambOpsBackend
         return CambOpsBackend
     else:
         raise RuntimeError(f'Unsupported device type: {device_type}')

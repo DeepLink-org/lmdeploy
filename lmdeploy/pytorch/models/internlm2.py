@@ -75,6 +75,7 @@ class InternLM2Attention(nn.Module):
         query_states, key_states, value_states = self.wqkv.split_qkv(
             qkv_states)
 
+        cu_seqlens = attn_metadata.cu_seqlens
         # apply rotary embedding
         cos, sin = rotary_pos_emb
         query_states, key_states = self.apply_rotary_pos_emb(
@@ -82,7 +83,7 @@ class InternLM2Attention(nn.Module):
             key_states,
             cos,
             sin,
-            attn_metadata,
+            cu_seqlens,
             inplace=True,
         )
 

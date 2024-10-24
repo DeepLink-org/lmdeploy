@@ -62,12 +62,6 @@ class CambOpsBackend(DlinferOpsBackend):
         cu_seqlens = torch.zeros(batch_size+1, dtype=torch.int32, device=device)
         cu_seqlens[:-1] = step_context.q_start_loc
         cu_seqlens[-1] = step_context.q_seqlens.sum()
-        cu_seqlens_list = cu_seqlens.tolist()
-
-        if not step_context.is_decoding:
-            cos_sin_ids = step_context.position_ids[0].to(torch.int32)
-        else:
-            cos_sin_ids = torch.zeros(batch_size, dtype=torch.int32, device=device)
 
         if not step_context.is_decoding:
             is_unpaged_prefill = \
@@ -104,7 +98,7 @@ class CambOpsBackend(DlinferOpsBackend):
             max_q_seq_len=max_q_seq_len,
             max_kv_seq_len=max_kv_seq_len,
             cu_seqlens=cu_seqlens,
-            cos_sin_ids=cos_sin_ids,
+            is_flash_attn_support_inplace=False,
         )
 
         step_context.attn_metadata = attn_metadata

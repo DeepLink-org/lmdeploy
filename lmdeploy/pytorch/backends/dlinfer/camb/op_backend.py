@@ -5,44 +5,18 @@ import torch
 
 from lmdeploy.utils import get_logger
 
-from ..base import OpType
-from ..default import DefaultOpsBackend
+from ..op_backend import DlinferOpsBackend
 
 logger = get_logger('lmdeploy')
 
 
-class CambOpsBackend(DefaultOpsBackend):
-    """Camb layer backend."""
+class CambOpsBackend(DlinferOpsBackend):
+    """camb layer backend."""
 
     @staticmethod
     def get_name() -> str:
         """backend name."""
         return 'camb'
-
-    @classmethod
-    def get_layer_impl_builder(cls, layer_type: OpType):
-        """get Camb layer builder."""
-        if layer_type == OpType.Attention:
-            from .attention import CambAttentionBuilder
-            return CambAttentionBuilder
-        elif layer_type == OpType.ApplyRotaryEmb:
-            from .apply_rotary_emb import CambApplyRotaryEmbBuilder
-            return CambApplyRotaryEmbBuilder
-        elif layer_type == OpType.RMSNorm:
-            from .norm import CambRMSNormBuilder
-            return CambRMSNormBuilder
-        elif layer_type == OpType.SiluAndMul:
-            from .activation import CambSiluAndMulBuilder
-            return CambSiluAndMulBuilder
-        else:
-            logger.debug(
-                f'Op {layer_type} fallback to default implementation.')
-            return super().get_layer_impl_builder(layer_type)
-
-    @staticmethod
-    def get_attention_metadata_cls():
-        from .attention import CambAttentionMetadata
-        return CambAttentionMetadata
 
     @staticmethod
     def get_k_block_shape(
@@ -52,7 +26,6 @@ class CambOpsBackend(DefaultOpsBackend):
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
         return (
-            #block_size,
             num_heads,
             block_size,
             head_size,
@@ -66,7 +39,6 @@ class CambOpsBackend(DefaultOpsBackend):
         dtype: torch.dtype,
     ) -> Tuple[int, ...]:
         return (
-            #block_size,
             num_heads,
             block_size,
             head_size,
@@ -76,7 +48,6 @@ class CambOpsBackend(DefaultOpsBackend):
     def update_step_context(cls, step_context):
         """update step context."""
         kv_start_indices, attention_mask = [], []
-        #_, block_size, _, _ = step_context.kv_caches[0][0].shape
         _, _, block_size, _ = step_context.kv_caches[0][0].shape
         device = step_context.block_offsets.device
         batch_size = step_context.q_start_loc.shape[0]

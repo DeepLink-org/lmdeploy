@@ -1,22 +1,23 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from torch import nn
+import torch
 
-from lmdeploy.pytorch.kernels.camb.activation import silu_and_mul
+from lmdeploy.pytorch.kernels.dlinfer import silu_and_mul
 
 from ..activation import (GeluAndMulBuilder, GeluAndMulImpl, SiluAndMulBuilder,
                           SiluAndMulImpl)
 
-class CambSiluAndMulImpl(SiluAndMulImpl):
+class DlinferSiluAndMulImpl(SiluAndMulImpl):
     """silu + multiple fused implementation."""
 
-    def forward(self, x):
+    def forward(self,
+            x: torch.Tensor):
         """forward."""
         return silu_and_mul(x)
 
-class CambSiluAndMulBuilder(SiluAndMulBuilder):
+class DlinferSiluAndMulBuilder(SiluAndMulBuilder):
     """silu and mul implementation builder."""
 
     @staticmethod
     def build(inplace: bool = False):
         """build."""
-        return CambSiluAndMulImpl()
+        return DlinferSiluAndMulImpl()

@@ -1,7 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import dlinfer.ops as ext_ops
-from torch import Tensor
-
+from dlinfer.utils.type_annotation import Tensor
 
 def silu_and_mul(
     input_tensor: Tensor,

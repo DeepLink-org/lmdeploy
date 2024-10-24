@@ -25,8 +25,7 @@ def prefill_attention(
     num_kv_heads = value_states.shape[1]
 
     if is_unpaged_prefill:
-        output = torch.empty_like(query_states)
-        ext_ops.prefill_attention(
+        return ext_ops.prefill_attention(
             query_states,
             key_states,
             value_states,
@@ -36,10 +35,8 @@ def prefill_attention(
             num_q_heads,
             num_kv_heads,
             attn_mask,
-            attn_output=output,
+            attn_output=attn_output,
         )
-        attn_output.copy_(output)
-        return attn_output
     else:
         return ext_ops.paged_prefill_attention(
             query_states,

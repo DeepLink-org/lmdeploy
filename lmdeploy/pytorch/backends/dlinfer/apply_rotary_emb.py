@@ -5,7 +5,6 @@ from torch import Tensor
 from lmdeploy.pytorch.kernels.dlinfer import apply_rotary_pos_emb
 
 from ..apply_rotary_emb import ApplyRotaryEmbBuilder, ApplyRotaryEmbImpl
-from .attention import DlinferAttentionMetadata
 
 class DlinferApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
     """Apply rotary embedding implementation."""
@@ -15,19 +14,16 @@ class DlinferApplyRotaryEmbImpl(ApplyRotaryEmbImpl):
                 key: Tensor,
                 cos: Tensor,
                 sin: Tensor,
-                attn_metadata: DlinferAttentionMetadata,
+                cu_seqlens: Tensor,
                 inplace: bool = True):
         """forward."""
-        cos_sin_ids = attn_metadata.cos_sin_ids
-        cu_seqlens = attn_metadata.cu_seqlens
-
         if inplace:
             q_embed = None
             k_embed = None
         else:
             q_embed = torch.empty_like(query)
             k_embed = torch.empty_like(key)
-        return apply_rotary_pos_emb(query, key, cos, sin, q_embed, k_embed, cos_sin_ids, cu_seqlens)
+        return apply_rotary_pos_emb(query, key, cos, sin, q_embed, k_embed, cu_seqlens)
 
 
 class DlinferApplyRotaryEmbBuilder(ApplyRotaryEmbBuilder):

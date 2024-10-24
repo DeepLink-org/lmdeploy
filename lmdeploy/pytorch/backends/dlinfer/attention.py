@@ -10,14 +10,13 @@ from ..attention import AttentionBuilder, AttentionImpl, AttentionMetadata
 @dataclass
 class DlinferAttentionMetadata(AttentionMetadata):
     kv_start_indices: Optional[Tensor] = None
-    block_size: int = 16
+    block_size: int = 64
     attention_mask: Sequence[Tensor] = tuple()
     is_unpaged_prefill: Optional[bool] = None
     max_q_seq_len: int = 1
     max_kv_seq_len: int = 1
     cu_seqlens: Optional[Tensor] = None
-    cos_sin_ids: Optional[Tensor] = None
-
+    is_flash_attn_support_inplace: bool = True
 
 class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
     """dlinfer attention implementation."""
@@ -81,6 +80,10 @@ class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
         # fill kv cache
         k_cache, v_cache = self.fill_kv_cache(key, value, k_cache, v_cache,
                                               kv_start_indices)
+
+        if is_unpaged_prefill:
+            inplace = inplace if attn_metadata.is_flash_attn_support_inplace \
+                    else False
 
         if inplace:
             attn_output = query[..., :self.v_head_size]

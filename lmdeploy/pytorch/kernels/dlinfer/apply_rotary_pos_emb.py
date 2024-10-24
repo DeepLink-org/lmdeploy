@@ -10,12 +10,11 @@ def apply_rotary_pos_emb(
     sin: Tensor,
     q_embed: Tensor = None,
     k_embed: Tensor = None,
-    cos_sin_ids=None,
     cu_seqlens=None,
 ):
     query_states = query_states.contiguous()
     key_states = key_states.contiguous()
-    query_states, key_states = ext_ops.apply_rotary_pos_emb(query_states, key_states, cos, sin, None, cos_sin_ids, cu_seqlens)
+    query_states, key_states = ext_ops.apply_rotary_pos_emb(query_states, key_states, cos, sin, None, cu_seqlens)
 
     if q_embed is None:
         q_embed = query_states

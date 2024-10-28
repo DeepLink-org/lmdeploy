@@ -9,6 +9,39 @@ from ..rotary_embedding import (Llama3Parameters, LongRoPEScalingParameters,
                                 RotaryEmbeddingImpl, YarnParameters)
 
 
+def _rotary_embedding_fwd(position_ids: torch.Tensor,
+                          inv_freq: torch.Tensor,
+                          scaling_factor: float,
+                          mscale: float = None,
+                          dtype: torch.dtype = None,
+                          device_type: torch.device = None):
+    """rotary embedding forward."""
+    if dtype is None:
+        dtype = torch.float16
+
+    if scaling_factor != 1.0:
+        position_ids = position_ids.float() / scaling_factor
+    else:
+        position_ids = position_ids.float()
+
+    inv_freq_expanded = inv_freq.view(1, -1, 1)
+    position_ids_expanded = position_ids.unsqueeze(1)
+
+    inv_freq_expanded = inv_freq_expanded
+    position_ids_expanded = position_ids_expanded
+    tmp = torch.bmm(inv_freq_expanded, position_ids_expanded)
+    freqs = tmp.transpose(1, 2)
+    emb = torch.cat((freqs, freqs), dim=-1)
+    cos = emb.cos()
+    sin = emb.sin()
+
+    if mscale is not None:
+        cos = cos * mscale
+        sin = sin * mscale
+
+    return cos.to(dtype=dtype), sin.to(dtype=dtype)
+
+
 class DlinferRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
     """base rotary embedding."""
 
@@ -28,30 +61,87 @@ class DlinferRotaryEmbeddingImpl(RotaryEmbeddingImpl, nn.Module):
     def forward(self, x, position_ids):
         """forward."""
         # x: [bs, num_attention_heads, seq_len, head_size]
+        device_type = x.device.type
+        dtype = x.dtype
         if self.inv_freq.device != x.device:
             self.inv_freq = self.inv_freq.to(x.device)
+        return _rotary_embedding_fwd(position_ids,
+                                     self.inv_freq,
+                                     scaling_factor=self.scaling_factor,
+                                     dtype=dtype,
+                                     device_type=device_type)
 
-        if self.scaling_factor != 1.0:
-            position_ids = position_ids.float() / self.scaling_factor
+
+class DlinferLlamaDynamicNTKScalingRotaryEmbeddingUpdate:
+    _instances = []
+    max_position_embeddings = 0
+
+    @classmethod
+    def register(cls, instance):
+        cls._instances.append(instance)
+
+    @classmethod
+    def update_all(cls, seq_len):
+        for instance in cls._instances:
+            instance.update(seq_len)
+
+
+class DlinferLlamaDynamicNTKScalingRotaryEmbedding(
+        LlamaDynamicNTKScalingRotaryEmbedding):
+    """LlamaRotaryEmbedding extended with Dynamic NTK scaling.
+
+    Credits to the Reddit users /u/bloc97 and /u/emozilla
+    """
+
+    def __init__(self,
+                 dim: int,
+                 base: int = 10000,
+                 scaling_factor: float = 1.0,
+                 max_position_embeddings: int = 2048):
+        super().__init__(dim, base, scaling_factor, max_position_embeddings)
+        self.exponent_1 = self.dim / (self.dim - 2)
+        self.exponent_2 = torch.arange(
+            0, self.dim, 2, dtype=torch.int64).float().cuda() / self.dim
+        self.sub = self.scaling_factor - 1
+        self.div = self.scaling_factor / self.max_position_embeddings
+        self.inv_freq2 = None
+        self.seq_len = None
+        # DlinferLlamaDynamicNTKScalingRotaryEmbeddingUpdate.register(self)
+
+    def _ntk_inv_freq(self, seq_len: torch.Tensor):
+        """ntk_inv_freq."""
+        base = self.base * ((self.div * seq_len) - self.sub)**self.exponent_1
+        inv_freq = 1.0 / (base**self.exponent_2)
+        return inv_freq
+
+    def update(self, position_ids):
+        seq_len = torch.max(position_ids) + 1
+
+        # if self.inv_freq.device != x.device:
+        #     self.inv_freq = self.inv_freq.to(x.device)
+        if seq_len > self.max_position_embeddings:
+            ntk_inv_freq = self._ntk_inv_freq(seq_len)
+            self.inv_freq2 = ntk_inv_freq
         else:
-            position_ids = position_ids.float()
+            self.inv_freq2 = self.inv_freq
 
-        inv_freq_expanded = self.inv_freq.view(1, -1, 1)
-        position_ids_expanded = position_ids.unsqueeze(1)
-
-        # # Force float32 since bfloat16 loses precision on long contexts
-        # See https://github.com/huggingface/transformers/pull/29285
+    def forward(self, x: torch.Tensor, position_ids: torch.Tensor):
+        """forward."""
         device_type = x.device.type
-        device_type = device_type if isinstance(
-            device_type, str) and device_type != 'mps' else 'cpu'
-        inv_freq_expanded = inv_freq_expanded
-        position_ids_expanded = position_ids_expanded
-        tmp = torch.bmm(inv_freq_expanded, position_ids_expanded)
-        freqs = tmp.transpose(1, 2)
-        emb = torch.cat((freqs, freqs), dim=-1)
-        cos = emb.cos()
-        sin = emb.sin()
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        dtype = x.dtype
+        seq_len = torch.max(position_ids) + 1
+        ntk_inv_freq = self._ntk_inv_freq(seq_len)
+        if self.inv_freq.device != x.device:
+            self.inv_freq = self.inv_freq.to(x.device)
+        inv_freq = torch.where(seq_len > self.max_position_embeddings,
+                               ntk_inv_freq, self.inv_freq)
+
+        cos, sin = _rotary_embedding_fwd(position_ids,
+                                         inv_freq,
+                                         scaling_factor=1.0,
+                                         dtype=dtype,
+                                         device_type=device_type)
+        return cos, sin
 
 
 class DlinferRotaryEmbeddingBuilder(RotaryEmbeddingBuilder):
@@ -72,7 +162,7 @@ class DlinferRotaryEmbeddingBuilder(RotaryEmbeddingBuilder):
         if emb_type in (RopeType.Default, RopeType.LinearScaling):
             return DlinferRotaryEmbeddingImpl(dim, base, scaling_factor)
         elif emb_type == RopeType.DynamicNTKScaling:
-            return LlamaDynamicNTKScalingRotaryEmbedding(
+            return DlinferLlamaDynamicNTKScalingRotaryEmbedding(
                 dim, base, scaling_factor, max_position_embeddings)
         elif emb_type == RopeType.Llama3:
             return Llama3RotaryEmbeddingImpl(dim, base, scaling_factor,

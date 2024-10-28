@@ -3,8 +3,10 @@ from typing import Tuple
 
 import torch
 
+from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
 from lmdeploy.utils import get_logger
 
+from ...base import OpType
 from ..op_backend import DlinferOpsBackend
 
 logger = get_logger('lmdeploy')
@@ -105,3 +107,12 @@ class CambOpsBackend(DlinferOpsBackend):
         step_context.attn_metadata = attn_metadata
         return step_context
 
+    @staticmethod
+    def build_graph_runner(model: torch.nn.Module, model_config: ModelConfig,
+                           cache_config: CacheConfig,
+                           backend_config: BackendConfig,
+                           device: torch.device):
+        """build graph runner."""
+        from .graph_runner import CAMBGraphRunner
+        return CAMBGraphRunner(model, model_config, cache_config,
+                               backend_config, device)

@@ -16,18 +16,22 @@ from ...graph_runner import GraphRunner
 logger = get_logger('lmdeploy')
 
 BuffType = Dict[str, Tensor]
-
-def next_power_of_2(n: int):
-    """Return the smallest power of 2 greater than or equal to n."""
-    n -= 1
-    n |= n >> 1
-    n |= n >> 2
-    n |= n >> 4
-    n |= n >> 8
-    n |= n >> 16
-    n |= n >> 32
-    n += 1
+def tensor_padding(n: int):
+    """currently camb seems support all n."""
+    """ for a LLM model, we need to capture 2 graphs, one is prefill stage(fixed total seqLens) 
+        and the other is decoder stage(batch is fixed)"""
     return n
+
+    # """Return the smallest power of 2 greater than or equal to n."""
+    # n -= 1
+    # n |= n >> 1
+    # n |= n >> 2
+    # n |= n >> 4
+    # n |= n >> 8
+    # n |= n >> 16
+    # n |= n >> 32
+    # n += 1
+    # return n
 
 
 def _false(*args, **kwargs):
@@ -71,11 +75,9 @@ class CAMBSingleGraphRunner:
         """capture graph."""
         self.meta.input_buffers = self.make_Camb_buffers(
             self.meta, **kwargs)
-        # padded_kwargs = self.model.fill_buffers_cudagraph(self.meta, **kwargs)
         padded_kwargs = self.update_Camb_buffer(self.meta, **kwargs)
 
         context = self.ctx_mgr.current_context()
-        # self.model.update_context_cudagraph(self.meta, context)
         self.update_Camb_context(self.meta, context)
         current_stream = torch.cuda.current_stream()
         # warmup
@@ -168,6 +170,7 @@ class CAMBSingleGraphRunner:
         input_buffers['kv_seqlens'][:batch_size] = kv_seqlens
         input_buffers['q_start_loc'][:batch_size] = q_start_loc
         
+
         input_buffers['cu_seqlens'][:batch_size+1] = cu_seqlens
         input_buffers['kv_start_indices'][:num_tokens] = kv_start_indices[:num_tokens]
         
@@ -180,8 +183,8 @@ class CAMBSingleGraphRunner:
             input_buffers['inputs_embeds'][:, :num_tokens] = inputs_embeds
 
         # create inputs
-        new_batch_size = next_power_of_2(batch_size)
-        new_num_tokens = next_power_of_2(num_tokens)
+        new_batch_size = tensor_padding(batch_size)
+        new_num_tokens = tensor_padding(num_tokens)
 
         attn_metadata.block_offsets = input_buffers[
             'block_offsets'][:new_batch_size]
@@ -283,7 +286,7 @@ class CAMBGraphRunner(GraphRunner):
         context = self.ctx_mgr.current_context()
         is_decoding = context.is_decoding
         num_tokens = input_ids.numel()
-        new_num_tokens = next_power_of_2(num_tokens)
+        new_num_tokens = tensor_padding(num_tokens)
         return (new_num_tokens, is_decoding)
 
     def __call__(self, **kwargs):

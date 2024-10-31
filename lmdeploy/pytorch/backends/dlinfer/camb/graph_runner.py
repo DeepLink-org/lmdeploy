@@ -80,6 +80,7 @@ class CAMBSingleGraphRunner:
         context = self.ctx_mgr.current_context()
         self.update_Camb_context(self.meta, context)
         current_stream = torch.cuda.current_stream()
+        
         # warmup
         self.model(**padded_kwargs)
 
@@ -292,13 +293,13 @@ class CAMBGraphRunner(GraphRunner):
     def __call__(self, **kwargs):
         """call."""
         enable_graph = self.enable_graph(**kwargs)
-
-        if not enable_graph:
-            return self.model(**kwargs)
-
         graph_key = self.get_graph_key(**kwargs)
         max_tokens = graph_key[0]
         is_decoding = graph_key[1]
+
+        if (not enable_graph) or (not is_decoding):
+            return self.model(**kwargs)
+
         if graph_key not in self._runner_map:
             max_batches = max_tokens if is_decoding else self.max_batches
             runner = CAMBSingleGraphRunner(self.model,
@@ -312,6 +313,7 @@ class CAMBGraphRunner(GraphRunner):
             self._runner_map[graph_key] = runner
         else:
             runner = self._runner_map[graph_key]
+            
         output = runner.forward(**kwargs)
         return output
 

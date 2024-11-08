@@ -19,7 +19,7 @@ def prefill_attention(
     block_size: int,
     attn_mask: Sequence[Optional[Tensor]],
     is_unpaged_prefill: Optional[bool],
-):
+) -> Tensor:
     if is_unpaged_prefill:
         return ext_ops.prefill_attention(
             query_states,

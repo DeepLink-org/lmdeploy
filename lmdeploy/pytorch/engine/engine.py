@@ -659,7 +659,8 @@ class Engine:
         return ret
 
     def _make_infer_outputs(self, next_token_ids: torch.LongTensor,
-                            logits: torch.Tensor, stopped: torch.Tensor):
+                            logits: torch.Tensor, stopped: torch.Tensor,
+                            inputs: ModelInputs, running: SeqList):
         """make infer output."""
 
         def __get_out_token_ids(token: torch.Tensor, msg: SchedulerSequence,
@@ -672,7 +673,6 @@ class Engine:
             return [token]
 
         def __get_q_start_loc():
-            inputs = self._inputs
             seq_length = inputs.seq_length
             batch_size = len(seq_length)
             if inputs.is_decoding:
@@ -680,7 +680,6 @@ class Engine:
             else:
                 return seq_length.cumsum(0) - seq_length
 
-        running = self._running
         is_run = [seq.status == MessageStatus.RUNNING for seq in running]
         stopped = stopped.tolist()
         self.update_running(running, next_token_ids, stopped)
@@ -708,16 +707,15 @@ class Engine:
             outputs[session_id] = out
 
             if msg.return_logits:
-                inputs = self._inputs
                 start = q_start_loc[idx]
                 seqlen = inputs.seq_length[idx]
                 outputs[session_id].logits = logits[start:start + seqlen]
         return outputs
 
     async def _async_step_background(
-            self, inputs: ModelInputs, swap_in_map: Dict, swap_out_map: Dict,
-            all_ids: torch.Tensor, guided_input_ids: torch.Tensor,
-            sampling_inputs: SamplingInputs,
+            self, inputs: ModelInputs, running: SeqList, swap_in_map: Dict,
+            swap_out_map: Dict, all_ids: torch.Tensor,
+            guided_input_ids: torch.Tensor, sampling_inputs: SamplingInputs,
             num_appendable_ids: torch.LongTensor,
             num_ignore_eos: torch.LongTensor, loop_count: int,
             return_logits: bool, output_que: asyncio.Queue):
@@ -774,7 +772,7 @@ class Engine:
             stopped = stopped.cpu()
             finish = stopped.all().item() or (idx == loop_count - 1)
             finish = finish or _check_finish(self.scheduler, idx)
-            output = (next_token_ids.cpu(), logits, stopped)
+            output = (next_token_ids.cpu(), logits, stopped, inputs, running)
             output_que.put_nowait((finish, output))
 
             if finish:
@@ -867,11 +865,12 @@ class Engine:
                 num_ignore_eos = __get_num_ignore_eos(running)
                 return_logits = __need_logits(running)
 
-                self._running = running
-                self._inputs = inputs
+                # self._running = running
+                # self._inputs = inputs
 
                 await self._async_step_background(
                     inputs=inputs,
+                    running=running,
                     swap_in_map=swap_in_map,
                     swap_out_map=swap_out_map,
                     all_ids=all_ids,
@@ -937,9 +936,9 @@ class Engine:
                 try:
                     if isinstance(out, Exception):
                         raise out
-                    next_token_ids, logits, stopped = out
+                    next_token_ids, logits, stopped, inputs, running = out
                     step_outputs = self._make_infer_outputs(
-                        next_token_ids, logits, stopped)
+                        next_token_ids, logits, stopped, inputs, running)
                     __send_resps(step_outputs)
                 except Exception as e:
                     raise e

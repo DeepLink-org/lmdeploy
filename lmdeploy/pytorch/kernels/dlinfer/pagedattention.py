@@ -20,9 +20,6 @@ def prefill_attention(
     attn_mask: Sequence[Optional[Tensor]],
     is_unpaged_prefill: Optional[bool],
 ) -> Tensor:
-    num_q_heads = query_states.shape[1]
-    num_kv_heads = value_states.shape[1]
-
     if is_unpaged_prefill:
         return ext_ops.prefill_attention(
             query_states,
@@ -31,8 +28,6 @@ def prefill_attention(
             q_start_loc,
             q_seq_len,
             max_q_seq_len,
-            num_q_heads,
-            num_kv_heads,
             attn_mask,
             attn_output=attn_output,
         )
@@ -55,8 +50,6 @@ def prefill_attention(
 
 def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
                           max_kv_seq_len, block_offsets, block_size):
-    num_q_heads, q_head_dim = q.shape[1:3]
-    num_kv_heads = k_cache.shape[-1] // q_head_dim
     return ext_ops.paged_decode_attention(
         q,
         k_cache,
@@ -65,8 +58,6 @@ def paged_token_attention(q, k_cache, v_cache, attn_output, kv_seq_len,
         block_size,
         kv_seq_len,
         max_kv_seq_len,
-        num_q_heads,
-        num_kv_heads,
         attn_output=attn_output,
     )
 

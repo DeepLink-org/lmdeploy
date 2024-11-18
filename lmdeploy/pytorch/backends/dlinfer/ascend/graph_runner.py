@@ -29,6 +29,7 @@ class AscendGraphRunner(GraphRunner):
             dlinfer.graph.config.enable_graph_mode = True
             self.patch_kernels_custom_op()
             self.patch_kvcache_static_shape()
+            # self.patch_logits_process()
             self.model = torch.compile(self.model,
                                        fullgraph=True,
                                        dynamic=True,
@@ -44,7 +45,8 @@ class AscendGraphRunner(GraphRunner):
             warnings.warn(
                 "Graph mode of device_type 'ascend' only supports tp=1 "
                 'for now, fallback to eager mode', RuntimeWarning)
-            return False
+            torch._inductor.config.compile_threads = 1
+            return True
 
         warnings.warn(
             '\n\n'
@@ -114,3 +116,39 @@ class AscendGraphRunner(GraphRunner):
             return gpu_cache
 
         setattr(cache_engine_class, func_str, allocate_gpu_cache_mark_static)
+
+    def patch_logits_process(self):
+        logits_process_module = import_module(
+            'lmdeploy.pytorch.engine.logits_process')
+        func_str = '_process_repetition_penalty_'
+        process_repetition_penalty_func = getattr(logits_process_module,
+                                                  func_str)
+        compiled_func = torch.compile(process_repetition_penalty_func,
+                                      fullgraph=True,
+                                      dynamic=True,
+                                      backend='atbgraph')
+        setattr(logits_process_module, func_str, compiled_func)
+
+        func_str = '_process_temperature_'
+        process_temperature_func = getattr(logits_process_module, func_str)
+        compiled_func = torch.compile(process_temperature_func,
+                                      fullgraph=True,
+                                      dynamic=True,
+                                      backend='atbgraph')
+        setattr(logits_process_module, func_str, compiled_func)
+
+        # func_str = '_process_bad_words_'
+        # process_bad_words_func = getattr(logits_process_module, func_str)
+        # compiled_func = torch.compile(process_bad_words_func,
+        #                                fullgraph=True,
+        #                                dynamic=True,
+        #                                backend='atbgraph')
+        # setattr(logits_process_module, func_str, compiled_func)
+
+        # func_str = '_guided_sampling'
+        # guided_sampling_func = getattr(logits_process_module, func_str)
+        # compiled_func = torch.compile(guided_sampling_func,
+        #                                fullgraph=True,
+        #                                dynamic=True,
+        #                                backend='atbgraph')
+        # setattr(logits_process_module, func_str, compiled_func)

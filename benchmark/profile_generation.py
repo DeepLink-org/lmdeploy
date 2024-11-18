@@ -430,6 +430,7 @@ def main():
                     eager_mode=args.eager_mode,
                     enable_prefix_caching=args.enable_prefix_caching,
                     dtype=args.dtype,
+                    device_type='ascend',
                 )
             gen_config = GenerationConfig(top_k=args.top_k,
                                           top_p=args.top_p,

@@ -289,6 +289,8 @@ class MixtralModel(nn.Module):
                 residual=residual,
                 attn_metadata=attn_metadata,
             )
+            # # XXX(tangzhiyi)
+            # break
 
         hidden_states, _ = self.norm(hidden_states, residual)
 
@@ -409,6 +411,9 @@ class MixtralForCausalLM(nn.Module, CudaGraphMixin):
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
+                if name not in params_dict.keys():
+                    if name not in params_dict.keys():
+                        continue
                 param = params_dict[name]
                 load_weight(param,
                             loaded_weight,
@@ -421,9 +426,13 @@ class MixtralForCausalLM(nn.Module, CudaGraphMixin):
                     if weight_name not in name:
                         continue
                     name = name.replace(weight_name, param_name)
+                    if name not in params_dict.keys():
+                        if name not in params_dict.keys():
+                            continue
                     param = params_dict[name]
                     load_weight(param, loaded_weight, shard_id=shard_id)
                     break
                 else:
-                    param = params_dict[name]
-                    load_weight(param, loaded_weight)
+                    if name in params_dict.keys():
+                        param = params_dict[name]
+                        load_weight(param, loaded_weight)

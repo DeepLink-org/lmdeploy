@@ -12,6 +12,7 @@ from lmdeploy.tokenizer import Tokenizer
 from ..messages import SchedulerSequence
 
 
+# XXX(tangzyiyi)
 def _process_temperature_(scores: torch.Tensor, temperature: torch.Tensor):
     """process temperature."""
     temperature = temperature.to(scores.dtype)
@@ -19,10 +20,27 @@ def _process_temperature_(scores: torch.Tensor, temperature: torch.Tensor):
     return scores
 
 
+def dump_tensor(tensor, name):
+    import pickle
+    with open(f'/tzy/dev_ops/{name}.pkl', 'wb') as f:
+        pickle.dump(tensor.cpu(), f)
+
+
+def dump_value(value, name):
+    import pickle
+    with open(f'/tzy/dev_ops/{name}.pkl', 'wb') as f:
+        pickle.dump(value, f)
+
+
+# XXX(tangzyiyi)
 def _process_bad_words_(scores: torch.Tensor,
                         bad_words: torch.LongTensor,
                         filter_value: float = -float('inf')):
     """process bad words."""
+    # dump_tensor(scores, 'scores')
+    # dump_tensor(bad_words, 'bad_words')
+    # dump_value(filter_value, 'filter_value')
+    # import pdb;pdb.set_trace()
     mask = bad_words >= 0
     bad_words = bad_words.where(mask, 0)
     filtered_scores = scores.gather(1, bad_words)
@@ -35,6 +53,8 @@ def _process_repetition_penalty_(scores: torch.Tensor,
                                  input_ids: torch.LongTensor,
                                  penalty: torch.Tensor):
     """process repetition penalty."""
+    import pdb
+    pdb.set_trace()
     score = torch.gather(scores, 1, input_ids)
     penalty = penalty.to(score.dtype)
     score = torch.where(score < 0, score * penalty[:, None],
@@ -47,6 +67,8 @@ def _filter_topk_sorted_(scores: torch.Tensor,
                          topk: torch.LongTensor,
                          filter_value: float = -float('inf')):
     """filter topk on sorted scores."""
+    import pdb
+    pdb.set_trace()
     filter_value = -float('inf')
     num_tokens = scores.size(1)
     token_idx = torch.arange(num_tokens, device=scores.device)
@@ -59,6 +81,8 @@ def _filter_topp_sorted_(scores: torch.Tensor,
                          topp: torch.Tensor,
                          filter_value: float = -float('inf')):
     """filter topp on sorted scores."""
+    import pdb
+    pdb.set_trace()
     softmax_scores = scores.softmax(-1)
     cum_scores = softmax_scores.cumsum(1) - softmax_scores
     mask = cum_scores > topp[:, None]
@@ -71,6 +95,8 @@ def _filter_minp_sorted_(scores: torch.Tensor,
                          minp: torch.Tensor,
                          filter_value: float = -float('inf')):
     """filter minp on sorted scores."""
+    import pdb
+    pdb.set_trace()
     softmax_scores = scores.softmax(-1)
     top_probs, _ = softmax_scores.max(dim=-1, keepdim=True)
     scaled_min_p = minp.unsqueeze(dim=1) * top_probs
@@ -84,10 +110,13 @@ def _multinomial_sampling(scores: torch.Tensor,
                           offsets: torch.LongTensor,
                           indices: torch.LongTensor = None):
     """sampling."""
+    import pdb
+    pdb.set_trace()
     from lmdeploy.pytorch.nn.multinomial_sampling import multinomial_sampling
     return multinomial_sampling(scores, seeds, offsets, indices)
 
 
+# XXX(tangzyiyi)
 def _guided_sampling(response_formats: Tuple[Dict], scores: torch.Tensor,
                      guided_input_ids: Optional[torch.Tensor],
                      tokenizer: object):

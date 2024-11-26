@@ -326,6 +326,7 @@ class Qwen2Model(nn.Module):
                 residual=residual,
                 attn_metadata=attn_metadata,
             )
+            # break
 
         # norm
         hidden_states, _ = self.norm(hidden_states, residual)

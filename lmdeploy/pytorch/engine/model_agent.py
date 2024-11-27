@@ -213,7 +213,8 @@ class BaseModelAgent(AutoModelAgent):
                  cache_config: CacheConfig,
                  backend_config: BackendConfig,
                  adapters: Dict[str, str] = None,
-                 trust_remote_code: bool = True):
+                 trust_remote_code: bool = True,
+                 instance_id: int = 0):
         super().__init__(model_config=model_config, cache_config=cache_config)
         device = 'cuda'
         self.backend_config = backend_config
@@ -223,7 +224,7 @@ class BaseModelAgent(AutoModelAgent):
                                                adapters,
                                                device=device)
 
-        _update_cache_config(model_config, cache_config)
+        _update_cache_config(model_config, cache_config, instance_id)
 
         backend = get_backend()
         self.patched_model = backend.build_graph_runner(
@@ -233,7 +234,8 @@ class BaseModelAgent(AutoModelAgent):
             backend_config=backend_config,
             device=device)
 
-        self.cache_engine = CacheEngine(cache_config, model_config)
+        self.cache_engine = CacheEngine(cache_config, model_config,
+                                        instance_id)
 
         self.stream = torch.cuda.Stream()
 
@@ -780,12 +782,22 @@ def build_model_agent(model_path: str,
         model_path, trust_remote_code=trust_remote_code, dtype=dtype)
     model_config.custom_module_map = custom_module_map
     if tp == 1:
-        model_agent = BaseModelAgent(model_path,
-                                     model_config=model_config,
-                                     cache_config=cache_config,
-                                     backend_config=backend_config,
-                                     adapters=adapters,
-                                     trust_remote_code=trust_remote_code)
+        if False:
+            model_agent = BaseModelAgent(model_path,
+                                         model_config=model_config,
+                                         cache_config=cache_config,
+                                         backend_config=backend_config,
+                                         adapters=adapters,
+                                         trust_remote_code=trust_remote_code)
+        else:
+            from .pd_agent import PDModelAgent
+            model_agent = PDModelAgent(2,
+                                       model_path,
+                                       model_config=model_config,
+                                       cache_config=cache_config,
+                                       backend_config=backend_config,
+                                       adapters=adapters,
+                                       trust_remote_code=trust_remote_code)
     else:
         model_agent = TPModelAgent(model_path,
                                    model_config=model_config,

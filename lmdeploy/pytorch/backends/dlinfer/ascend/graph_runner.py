@@ -28,6 +28,7 @@ class AscendGraphRunner(GraphRunner):
             dlinfer.graph.config.enable_graph_mode = True
             self.patch_kernels_custom_op()
             self.patch_kvcache_static_shape()
+            self.patch_logits_process()
             self.model = torch.compile(self.model,
                                        fullgraph=True,
                                        dynamic=True,
@@ -110,3 +111,32 @@ class AscendGraphRunner(GraphRunner):
             return gpu_cache
 
         setattr(cache_engine_class, func_str, allocate_gpu_cache_mark_static)
+
+    def patch_logits_process(self):
+        logits_process_module = import_module(
+            'lmdeploy.pytorch.engine.logits_process')
+
+        func_str = '_process_temperature_'
+        process_temperature_func = getattr(logits_process_module, func_str)
+        compiled_func = torch.compile(process_temperature_func,
+                                      fullgraph=True,
+                                      dynamic=True,
+                                      backend='atbgraph')
+        setattr(logits_process_module, func_str, compiled_func)
+
+        func_str = '_process_bad_words_'
+        def _process_bad_words_(scores: torch.Tensor,
+                                bad_words: torch.LongTensor,
+                                filter_value: float = -float('inf')):
+            """process bad words."""
+            mask = bad_words >= 0
+            bad_words = bad_words * mask
+            filtered_scores = scores.gather(1, bad_words)
+            filtered_scores = torch.where(mask, filter_value, filtered_scores)
+            scores.scatter_(1, bad_words, filtered_scores)
+            return scores
+        compiled_func = torch.compile(_process_bad_words_,
+                                       fullgraph=True,
+                                       dynamic=True,
+                                       backend='atbgraph')
+        setattr(logits_process_module, func_str, compiled_func)

@@ -117,6 +117,8 @@ class MessageStatus(enum.Enum):
 
     WAITING = enum.auto()
     RUNNING = enum.auto()
+    WAITING_FOR_MIGRATION = enum.auto()
+    MIGRATION_DONE = enum.auto()
     STOPPED = enum.auto()
     ENDED = enum.auto()
     ABORTED = enum.auto()

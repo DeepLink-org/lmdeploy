@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import asyncio
 import copy
+import enum
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -20,7 +21,8 @@ from ..devices import DeviceContext, get_device_manager
 from ..messages import (InputEmbeddingRangeType, InputEmbeddingType,
                         MessageStatus, SchedulerSequence)
 from ..model_inputs import ModelInputs, MRopeModelInputs, VisionModelInputs
-from ..paging import Scheduler
+from ..paging import PDScheduler, Scheduler
+from ..paging.pd_scheduler import PDSchedulerOutput
 from .logits_process import FusedLogitsProcessor, SamplingInputs
 from .model_agent import build_model_agent
 from .request import Request, RequestManager, RequestType, Response
@@ -40,6 +42,11 @@ def _raise_exception_on_finish(task: asyncio.Task) -> None:
         return
     except Exception as e:
         raise e
+
+
+class InstanceWorkType(enum.Enum):
+    Prefill = enum.auto()
+    Decode = enum.auto()
 
 
 @dataclass
@@ -111,6 +118,10 @@ class Engine:
 
         self.engine_config = engine_config
         self.tp = engine_config.tp
+        # hard code config
+        self.pd_instances_num = 2
+        self.p_model_agent_ids = [0]
+        self.d_model_agent_ids = [1]
 
         self.device_context = DeviceContext(
             device_type=engine_config.device_type)
@@ -158,12 +169,15 @@ class Engine:
 
         cache_config = self.model_agent.cache_config
         self.adapter_manager = self._build_adapter_manager(adapters)
-        self.scheduler = Scheduler(scheduler_config, cache_config)
+        self.schedulers = [
+            PDScheduler(scheduler_config, cache_config)
+            for _ in range(self.pd_instances_num)
+        ]
 
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
         self.backend_config = backend_config
-        self.stream = self.model_agent.stream
+        self.streams = self.model_agent.streams
 
         self.req_manager = self._bind_request_manager()
 
@@ -261,43 +275,43 @@ class Engine:
                      data=data,
                      err_msg=err_msg))
 
-    def _on_add_session(self, reqs: Request, **kwargs):
+    def _on_add_session(self, reqs: Request, model_agent_id: int, **kwargs):
         """on add session callback."""
         for req in reqs:
             session_id = req.data['session_id']
             resp = req.data.get('response', True)
             resp_type = ResponseType.SESSION_REPEAT
-            if session_id not in self.scheduler.sessions:
-                self.scheduler.add_session(session_id)
+            if session_id not in self.schedulers[model_agent_id].sessions:
+                self.schedulers[model_agent_id].add_session(session_id)
                 resp_type = ResponseType.SUCCESS
             if resp:
                 self._response(resp_type, req.sender_id, req.req_id)
 
-    def _on_stop_session(self, reqs: Request, **kwargs):
+    def _on_stop_session(self, reqs: Request, model_agent_id: int, **kwargs):
         """on stop session callback."""
         for req in reqs:
             session_id = req.data['session_id']
             resp = req.data.get('response', True)
             resp_type = ResponseType.SESSION_NOT_EXIST
-            if session_id in self.scheduler.sessions:
-                self.scheduler.stop_session(session_id)
+            if session_id in self.schedulers[model_agent_id].sessions:
+                self.schedulers[model_agent_id].stop_session(session_id)
                 resp_type = ResponseType.SUCCESS
             if resp:
                 self._response(resp_type, req.sender_id, req.req_id)
 
-    def _on_end_session(self, reqs: Request, **kwargs):
+    def _on_end_session(self, reqs: Request, model_agent_id: int, **kwargs):
         """on end session callback."""
         for req in reqs:
             session_id = req.data['session_id']
             resp = req.data.get('response', True)
             resp_type = ResponseType.SESSION_NOT_EXIST
-            if session_id in self.scheduler.sessions:
-                self.scheduler.end_session(session_id)
+            if session_id in self.schedulers[model_agent_id].sessions:
+                self.schedulers[model_agent_id].end_session(session_id)
                 resp_type = ResponseType.SUCCESS
             if resp:
                 self._response(resp_type, req.sender_id, req.req_id)
 
-    def _on_add_message(self, reqs: Request, **kwargs):
+    def _on_add_message(self, reqs: Request, model_agent_id: int, **kwargs):
         """on add message callback."""
 
         def __update_bad_words(msg):
@@ -324,12 +338,12 @@ class Engine:
 
         for req in reqs:
             session_id = req.data['session_id']
-            if session_id not in self.scheduler.sessions:
+            if session_id not in self.schedulers[model_agent_id].sessions:
                 self._response(ResponseType.SESSION_NOT_EXIST, req.sender_id,
                                req.req_id)
                 continue
             session_id = req.data['session_id']
-            sess = self.scheduler.sessions[session_id]
+            sess = self.schedulers[model_agent_id].sessions[session_id]
             # TODO: support 1 session n sequence
             if len(sess.sequences) == 0:
                 assert len(
@@ -348,7 +362,7 @@ class Engine:
                 msg = next(iter(sess.sequences.values()))
                 __update_bad_words(msg)
                 __update_max_new_tokens(msg)
-                self.scheduler.add_sequence(msg)
+                self.schedulers[model_agent_id].add_sequence(msg)
             else:
                 msg = next(iter(sess.sequences.values()))
                 msg.update_token_ids(req.data['token_ids'],
@@ -374,7 +388,11 @@ class Engine:
         return self.tp
 
     @logging_timer('CreateModelInputs', logger)
-    def create_model_inputs(self, messages: SeqList, is_prefill: bool):
+    def create_model_inputs(self,
+                            messages: SeqList,
+                            is_prefill: bool,
+                            model_agent_id: int,
+                            messages_block_tables: List[np.ndarray] = None):
         """create model inputs from messages.
 
         Args:
@@ -400,7 +418,11 @@ class Engine:
         max_q_seq_length = seq_length.max().item()
 
         # TODO: get block offsets is slow when block_size = 1
-        block_offsets = self.scheduler.get_block_tables(messages)
+        if messages_block_tables is None:
+            block_offsets = self.schedulers[model_agent_id].get_block_tables(
+                messages)
+        else:
+            block_offsets = messages_block_tables
         block_offsets = _tensorlize_block_offsets(block_offsets)
 
         local_adapter_ids = None
@@ -572,7 +594,7 @@ class Engine:
     @logging_timer('ModelForward', logger)
     async def _async_model_forward(self, inputs: ModelInputs,
                                    swap_in_map: Dict, swap_out_map: Dict,
-                                   return_logits: bool):
+                                   model_agent_id: int, return_logits: bool):
         """model forward."""
         max_prefill_token_num = self.cache_config.max_prefill_token_num
         swap_done = False
@@ -618,11 +640,17 @@ class Engine:
             nonlocal swap_done, swap_in_map, swap_out_map
             if swap_done:
                 return await self.model_agent.async_forward(
-                    inputs, swap_in_map=dict(), swap_out_map=dict())
+                    inputs,
+                    model_agent_id,
+                    swap_in_map=dict(),
+                    swap_out_map=dict())
             else:
                 swap_done = True
                 return await self.model_agent.async_forward(
-                    inputs, swap_in_map=swap_in_map, swap_out_map=swap_out_map)
+                    inputs,
+                    model_agent_id,
+                    swap_in_map=swap_in_map,
+                    swap_out_map=swap_out_map)
 
         async def __long_context_single_forward(inputs):
             """one large sequence."""
@@ -654,7 +682,7 @@ class Engine:
                 ret['hidden_states'] = ret['hidden_states'][:, last_token_loc]
 
         hidden_states = ret.pop('hidden_states')
-        logits = self.model_agent.get_logits(hidden_states)
+        logits = self.model_agent.get_logits(hidden_states, model_agent_id)
         ret['logits'] = logits
         return ret
 
@@ -718,7 +746,8 @@ class Engine:
             guided_input_ids: torch.Tensor, sampling_inputs: SamplingInputs,
             num_appendable_ids: torch.LongTensor,
             num_ignore_eos: torch.LongTensor, loop_count: int,
-            return_logits: bool, output_que: asyncio.Queue):
+            return_logits: bool, output_que: asyncio.Queue,
+            model_agent_id: int):
         """asyc forward task."""
 
         def __update_inputs(next_token_ids):
@@ -754,6 +783,7 @@ class Engine:
                 inputs,
                 swap_in_map=swap_in_map,
                 swap_out_map=swap_out_map,
+                model_agent_id=model_agent_id,
                 return_logits=return_logits)
             logits = output['logits']
             logits = logits[0]  # [bs, seq, prob] -> [seq, prob]
@@ -771,7 +801,8 @@ class Engine:
             # send output
             stopped = stopped.cpu()
             finish = stopped.all().item() or (idx == loop_count - 1)
-            finish = finish or _check_finish(self.scheduler, idx)
+            finish = finish or _check_finish(self.schedulers[model_agent_id],
+                                             idx)
             output = (next_token_ids.cpu(), logits, stopped, inputs, running)
             output_que.put_nowait((finish, output))
 
@@ -786,8 +817,10 @@ class Engine:
 
     @torch.inference_mode()
     async def _async_loop_background(self, in_que: asyncio.Queue,
-                                     out_que: asyncio.Queue):
+                                     out_que: asyncio.Queue,
+                                     model_agent_id: int):
         """async loop background."""
+        print(f'enter _async_loop_background {model_agent_id}')
 
         def __gather_all_ids(seqs: SeqList, sampling_inputs: SamplingInputs):
             """gather history."""
@@ -846,59 +879,77 @@ class Engine:
             return any(seq.return_logits for seq in seqs)
 
         while True:
+            # print(f"await in_que get begin {model_agent_id}")
             is_prefill, scheduler_output = await in_que.get()
+            scheduler_output: PDSchedulerOutput
+            # print(f"await in_que get end {model_agent_id}")
             try:
-                running = scheduler_output.running
-                swap_in_map = scheduler_output.swap_in_map
-                swap_out_map = scheduler_output.swap_out_map
-                prefill_interval = self.scheduler_config.prefill_interval
-                loop_count = 1 if is_prefill else (prefill_interval - 1)
-                assert len(running) > 0
+                migration_meta = scheduler_output.migration_meta
+                if migration_meta is not None:
+                    self.model_agent.migrate(migration_meta)
+                    self.schedulers[
+                        migration_meta.dst_model_agent_id].change_msg_status(
+                            scheduler_output.migration_meta.seq_list,
+                            MessageStatus.MIGRATION_DONE)
+                    out_que.put_nowait((True, None))
+                else:
+                    running = scheduler_output.running
+                    swap_in_map = scheduler_output.swap_in_map
+                    swap_out_map = scheduler_output.swap_out_map
+                    prefill_interval = self.scheduler_config.prefill_interval
+                    loop_count = 1 if is_prefill else (prefill_interval - 1)
+                    assert len(running) > 0
 
-                # create inputs
-                inputs = self.create_model_inputs(running, is_prefill)
-                sampling_inputs = SamplingInputs.from_sampling_params(running)
-                all_ids = __gather_all_ids(running, sampling_inputs)
-                guided_input_ids = __gather_guided_input_ids(
-                    running, sampling_inputs)
-                num_appendable_ids = __get_num_appendable_ids(running)
-                num_ignore_eos = __get_num_ignore_eos(running)
-                return_logits = __need_logits(running)
+                    # create inputs
+                    inputs = self.create_model_inputs(running, is_prefill,
+                                                      model_agent_id)
+                    sampling_inputs = SamplingInputs.from_sampling_params(
+                        running)
+                    all_ids = __gather_all_ids(running, sampling_inputs)
+                    guided_input_ids = __gather_guided_input_ids(
+                        running, sampling_inputs)
+                    num_appendable_ids = __get_num_appendable_ids(running)
+                    num_ignore_eos = __get_num_ignore_eos(running)
+                    return_logits = __need_logits(running)
 
-                # self._running = running
-                # self._inputs = inputs
+                    # self._running = running
+                    # self._inputs = inputs
 
-                await self._async_step_background(
-                    inputs=inputs,
-                    running=running,
-                    swap_in_map=swap_in_map,
-                    swap_out_map=swap_out_map,
-                    all_ids=all_ids,
-                    guided_input_ids=guided_input_ids,
-                    sampling_inputs=sampling_inputs,
-                    num_appendable_ids=num_appendable_ids,
-                    num_ignore_eos=num_ignore_eos,
-                    loop_count=loop_count,
-                    return_logits=return_logits,
-                    output_que=out_que,
-                )
+                    await self._async_step_background(
+                        inputs=inputs,
+                        running=running,
+                        swap_in_map=swap_in_map,
+                        swap_out_map=swap_out_map,
+                        all_ids=all_ids,
+                        guided_input_ids=guided_input_ids,
+                        sampling_inputs=sampling_inputs,
+                        num_appendable_ids=num_appendable_ids,
+                        num_ignore_eos=num_ignore_eos,
+                        loop_count=loop_count,
+                        return_logits=return_logits,
+                        output_que=out_que,
+                        model_agent_id=model_agent_id,
+                    )
             except Exception as e:
                 out_que.put_nowait((True, e))
             finally:
                 in_que.task_done()
 
     @torch.inference_mode()
-    async def _async_loop(self):
+    async def _async_loop(self, work_type: InstanceWorkType):
         """Main loop of the engine.
 
         Each engine instance would communicate with the engine by queue.
         """
+        is_prefill = work_type == InstanceWorkType.Prefill
+        model_agent_id = 0 if is_prefill else 1
+        print(f'enter LoopBackground-{work_type}', flush=True)
         prefill_interval = self.scheduler_config.prefill_interval
         in_que = asyncio.Queue()
         out_que = asyncio.Queue()
         loop_background = asyncio.get_event_loop().create_task(
-            self._async_loop_background(in_que, out_que),
-            name='MainLoopBackground')
+            self._async_loop_background(in_que, out_que, model_agent_id),
+            name=f'LoopBackground-{work_type}')
         loop_background.add_done_callback(_raise_exception_on_finish)
 
         def __send_resp(out: InferOutput):
@@ -918,13 +969,14 @@ class Engine:
 
         async def __step():
             """step decoding."""
-            prefill = self.scheduler.has_waiting()
-            schedule_output = self.scheduler.schedule(
+            prefill = is_prefill
+            schedule_output = self.schedulers[model_agent_id].schedule(
                 is_prefill=prefill, prealloc_size=prefill_interval)
             # schedule decoding if no valid prefill reqs.
             if prefill and len(schedule_output.running) == 0:
+                raise RuntimeError('some thing wrong in prefill schedule')
                 prefill = False
-                schedule_output = self.scheduler.schedule(
+                schedule_output = self.schedulers[model_agent_id].schedule(
                     is_prefill=prefill, prealloc_size=prefill_interval)
 
             in_que.put_nowait((prefill, schedule_output))
@@ -934,32 +986,67 @@ class Engine:
                     self.req_manager.step()
                 finish, out = await out_que.get()
                 try:
+                    if out is None:
+                        # migration done
+                        continue
                     if isinstance(out, Exception):
                         raise out
                     next_token_ids, logits, stopped, inputs, running = out
                     step_outputs = self._make_infer_outputs(
                         next_token_ids, logits, stopped, inputs, running)
                     __send_resps(step_outputs)
+                    if not inputs.is_decoding:
+                        target_model_agent_id = self.d_model_agent_ids[0]
+                        p_blocks_list = self.schedulers[
+                            model_agent_id].get_block_tables(running)
+                        self.schedulers[
+                            target_model_agent_id].update_migration_info(
+                                running, p_blocks_list, model_agent_id,
+                                target_model_agent_id)
+                        self.schedulers[
+                            model_agent_id].remove_sessions_for_seqs(running)
+
                 except Exception as e:
                     raise e
                 finally:
                     out_que.task_done()
 
         while True:
-            if self.req_manager.has_requests():
-                self.req_manager.step()
+            scheduler = self.schedulers[model_agent_id]
+            if is_prefill:
+                if self.req_manager.has_requests():
+                    self.req_manager.step(model_agent_id=model_agent_id)
 
-            if not self.scheduler.has_unfinished():
-                await asyncio.sleep(0.01)
-                continue
+                if not scheduler.has_unfinished():
+                    await asyncio.sleep(0.01)
+                    continue
+
+            else:
+                if not (scheduler.has_unfinished()
+                        or scheduler.has_waiting_for_migration()
+                        or scheduler.has_migration_done()):
+                    await asyncio.sleep(0.01)
+                    continue
 
             await __step()
 
     async def async_loop(self):
+
+        async def __async_loop_with_ctx(index, work_type):
+            with torch.cuda.stream(self.streams[index]):
+                await self._async_loop(work_type)
+
         device_manager = get_device_manager()
-        with device_manager.context(self.device_context), torch.cuda.stream(
-                self.stream):
-            await self._async_loop()
+        coro_list = []
+        with device_manager.context(self.device_context):
+            for i in range(self.pd_instances_num):
+                if i in self.p_model_agent_ids:
+                    coro_list.append(
+                        __async_loop_with_ctx(i, InstanceWorkType.Prefill))
+                elif i in self.d_model_agent_ids:
+                    coro_list.append(
+                        __async_loop_with_ctx(i, InstanceWorkType.Decode))
+            await asyncio.gather(*coro_list)
 
     def create_instance(self, cuda_stream_id=0):
         """Create a pytorch engine instance.

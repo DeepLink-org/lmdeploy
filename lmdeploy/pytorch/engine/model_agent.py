@@ -168,8 +168,8 @@ class AutoModelAgent:
         """get block nelement."""
         raise NotImplementedError('Not implemented')
 
-    async def async_forward(self, inputs: ModelInputs, swap_in_map: SwapMap,
-                            swap_out_map: SwapMap):
+    async def async_forward(self, inputs: ModelInputs, model_agent_id: int,
+                            swap_in_map: SwapMap, swap_out_map: SwapMap):
         """model forward.
 
         Args:
@@ -190,7 +190,7 @@ class AutoModelAgent:
         """
         raise NotImplementedError('Not implemented.')
 
-    def get_logits(self, hidden_states: torch.Tensor):
+    def get_logits(self, hidden_states: torch.Tensor, model_agent_id: int):
         """get logits of model output."""
         raise NotImplementedError('Not implemented.')
 
@@ -237,7 +237,11 @@ class BaseModelAgent(AutoModelAgent):
         self.cache_engine = CacheEngine(cache_config, model_config,
                                         instance_id)
 
-        self.stream = torch.cuda.Stream()
+        self.streams = [torch.cuda.Stream()]
+
+    @property
+    def stream(self):
+        return self.streams[0]
 
     def _build_model(self,
                      model_path: str,
@@ -293,8 +297,8 @@ class BaseModelAgent(AutoModelAgent):
         self.stream.synchronize()
         return output
 
-    async def async_forward(self, inputs: ModelInputs, swap_in_map: SwapMap,
-                            swap_out_map: SwapMap):
+    async def async_forward(self, inputs: ModelInputs, model_agent_id: int,
+                            swap_in_map: SwapMap, swap_out_map: SwapMap):
         """model forward.
 
         Args:
@@ -309,7 +313,7 @@ class BaseModelAgent(AutoModelAgent):
                                                        self.stream.synchronize)
         return output
 
-    def get_logits(self, hidden_states: torch.Tensor):
+    def get_logits(self, hidden_states: torch.Tensor, model_agent_id: int):
         """get logits of model output."""
         return self.patched_model.get_logits(hidden_states)
 
@@ -595,7 +599,11 @@ class TPModelAgent(AutoModelAgent):
         self.patched_model = model
         self.cache_config = cache_config
         self.cache_engine = cache_engine
-        self.stream = torch.cuda.Stream()
+        self.streams = [torch.cuda.Stream()]
+
+    @property
+    def stream(self):
+        return self.streams[0]
 
     def _mp_watchdog(self, mp_context: mp.ProcessContext, timeout: int = 1):
         """watch dog of mp context.
@@ -732,8 +740,8 @@ class TPModelAgent(AutoModelAgent):
         self.stream.synchronize()
         return output
 
-    async def async_forward(self, inputs: ModelInputs, swap_in_map: SwapMap,
-                            swap_out_map: SwapMap):
+    async def async_forward(self, inputs: ModelInputs, model_agent_id: int,
+                            swap_in_map: SwapMap, swap_out_map: SwapMap):
         """model forward.
 
         Args:
@@ -748,7 +756,7 @@ class TPModelAgent(AutoModelAgent):
                                                        self.stream.synchronize)
         return output
 
-    def get_logits(self, hidden_states: torch.Tensor):
+    def get_logits(self, hidden_states: torch.Tensor, model_agent_id: int):
         """get logits of model output."""
         return self.patched_model.get_logits(hidden_states)
 

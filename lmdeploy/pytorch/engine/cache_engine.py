@@ -32,8 +32,9 @@ class CacheEngine:
         rank: int = 0,
         world_size: int = 1,
     ) -> None:
-        if rank == 0:
-            logger.info(f'build CacheEngine with config:{cache_config}')
+        # if rank == 0:
+        logger.info(
+            f'build CacheEngine rank {rank} with config:{cache_config}')
         self.rank = rank
         self.world_size = world_size
 

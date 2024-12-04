@@ -66,7 +66,9 @@ class MACASingleGraphRunner:
         self.update_context_cudagraph(self.meta, context)
         current_stream = torch.cuda.current_stream()
 
-        output = self.model(**padded_kwargs)
+        for _ in range(2):
+            output = self.model(**padded_kwargs)
+        torch.cuda.synchronize()
 
         # warmup
         self._graph = torch.cuda.CUDAGraph()
@@ -77,6 +79,9 @@ class MACASingleGraphRunner:
                               stream=current_stream,
                               capture_error_mode='thread_local'):
             output = self.model(**padded_kwargs)
+            import gc
+            gc.collect()
+        torch.cuda.synchronize()
 
         output_buffers = dict(logits=output)
         self.meta.output_buffers = output_buffers

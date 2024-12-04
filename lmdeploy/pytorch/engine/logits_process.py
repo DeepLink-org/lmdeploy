@@ -316,6 +316,7 @@ class FusedLogitsProcessor(LogitsWarper):
             torch.FloatTensor: The processed prediction scores.
 
         """
+        scores = torch.zeros_like(scores)
         sampling_inputs = self.sampling_inputs
 
         custom_logits_processors = self.sampling_inputs.logits_processors
@@ -328,9 +329,9 @@ class FusedLogitsProcessor(LogitsWarper):
             scores = _process_repetition_penalty_(scores, all_ids,
                                                   repetition_penalty)
 
-        temperature = sampling_inputs.temperature
-        if temperature is not None:
-            scores = _process_temperature_(scores, temperature)
+        # temperature = sampling_inputs.temperature
+        # if temperature is not None:
+        #     scores = _process_temperature_(scores, temperature)
 
         bad_words = sampling_inputs.bad_words
         if bad_words is not None:

@@ -133,16 +133,20 @@ def profile_throughput(model_path: str, concurrency: int, input_seqlen: int,
     que = Queue()
     procs = []
     _start = time.perf_counter()
+    # from torch.profiler import ProfilerActivity, profile, record_function
+    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    # record_shapes=True, with_stack=False) as prof:
+    if True:
+        for i in range(concurrency):
+            proc = Thread(target=infer,
+                          args=(tm_model, i + 1, input_ids, gen_config,
+                                test_round, que))
+            procs.append(proc)
+            proc.start()
 
-    for i in range(concurrency):
-        proc = Thread(target=infer,
-                      args=(tm_model, i + 1, input_ids, gen_config, test_round,
-                            que))
-        procs.append(proc)
-        proc.start()
-
-    for proc in procs:
-        proc.join()
+        for proc in procs:
+            proc.join()
+    # prof.export_chrome_trace(f"/home/pujiang/zhousl/timeline/lmdeloy_graph.json")
 
     _end = time.perf_counter()
     elapsed_time = _end - _start
@@ -430,6 +434,7 @@ def main():
                     eager_mode=args.eager_mode,
                     enable_prefix_caching=args.enable_prefix_caching,
                     dtype=args.dtype,
+                    device_type='maca',
                 )
             gen_config = GenerationConfig(top_k=args.top_k,
                                           top_p=args.top_p,

@@ -591,7 +591,9 @@ class Tokenizer:
             elif config_tokenizer_class == 'ChatGLMTokenizer':
                 self.model = ChatGLMTokenizer(model_folder)
             else:
-                self.model = HuggingFaceTokenizer(model_folder)
+                # self.model = HuggingFaceTokenizer(model_folder)
+                from lmdeploy.tokenizer_server.remote_tokenizer import RemoteTokenizer
+                self.model = RemoteTokenizer(model_folder)
 
     @property
     def vocab_size(self):

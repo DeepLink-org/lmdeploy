@@ -14,6 +14,7 @@ from ..messages import SchedulerSequence
 
 def _process_temperature_(scores: torch.Tensor, temperature: torch.Tensor):
     """process temperature."""
+    temperature = torch.ones_like(temperature)
     temperature = temperature.to(scores.dtype)
     scores.div_(temperature[:, None])
     return scores

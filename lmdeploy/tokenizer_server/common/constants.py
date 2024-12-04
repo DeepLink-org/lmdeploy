@@ -1,0 +1,21 @@
+# Default server settings
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 5555
+DEFAULT_TIMEOUT = 10.0  # seconds
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_WORKERS = 4
+
+# Environment variables
+ENV_USE_REMOTE = "USE_REMOTE_TOKENIZER"
+ENV_HOST = "TOKENIZER_HOST" 
+ENV_PORT = "TOKENIZER_PORT"
+
+# ZMQ settings
+ZMQ_RCVTIMEO = 10000  # ms
+ZMQ_SNDTIMEO = 10000  # ms
+ZMQ_LINGER = 1000     # ms
+
+# Message types
+MSG_TYPE_REQUEST = "request"
+MSG_TYPE_RESPONSE = "response"
+MSG_TYPE_ERROR = "error"

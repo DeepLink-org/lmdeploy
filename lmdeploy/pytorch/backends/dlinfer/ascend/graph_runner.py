@@ -21,14 +21,13 @@ class AscendGraphRunner(GraphRunner):
                  device: torch.device):
         super().__init__(model, model_config, cache_config, backend_config,
                          device)
-
         self.enable_graph = self.check_enable_graph()
         if self.enable_graph:
             import dlinfer.graph
             dlinfer.graph.config.enable_graph_mode = True
             self.patch_kernels_custom_op()
             self.patch_kvcache_static_shape()
-            self.patch_logits_process()
+            # self.patch_logits_process()
             self.model = torch.compile(self.model,
                                        fullgraph=True,
                                        dynamic=True,
@@ -130,7 +129,7 @@ class AscendGraphRunner(GraphRunner):
                                 filter_value: float = -float('inf')):
             """process bad words."""
             mask = bad_words >= 0
-            bad_words = bad_words * mask
+            bad_words = bad_words.where(mask, 0)
             filtered_scores = scores.gather(1, bad_words)
             filtered_scores = torch.where(mask, filter_value, filtered_scores)
             scores.scatter_(1, bad_words, filtered_scores)

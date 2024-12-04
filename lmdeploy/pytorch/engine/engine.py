@@ -670,7 +670,8 @@ class Engine:
             tmp_out['hidden_states'] = output_gather.get_output()
             return tmp_out
 
-        if inputs.input_ids.numel() <= max_prefill_token_num:
+        # if inputs.input_ids.numel() <= max_prefill_token_num:
+        if True:
             ret = await __forward(inputs)
             if not return_logits and not inputs.is_decoding:
                 last_token_loc = inputs.seq_length.cumsum(0) - 1

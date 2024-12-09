@@ -190,6 +190,8 @@ class AscendOpsBackend(DlinferOpsBackend):
                                dtype=torch.bool).cuda(),
                     diagonal=max_kv_seq_len - max_q_seq_len,
                 ))
+            single_attention_mask = single_attention_mask.view((1, max_q_seq_len, max_q_seq_len))
+            single_attention_mask = torch.cat((single_attention_mask, single_attention_mask, single_attention_mask), 0)
             attention_mask.append(single_attention_mask)
         else:
             # prepare some params of paged_prefill attention stage.

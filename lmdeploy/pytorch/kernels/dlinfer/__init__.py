@@ -1,8 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from ..default import multinomial_sampling
+from .activation import silu_and_mul
 from .apply_rotary_pos_emb import apply_rotary_pos_emb
 from .awq_kernels import awq_linear
 from .fill_kv_cache import fill_kv_cache
+from .flash_attention import flash_attention_fwd
 from .fused_moe import fused_moe
 from .linear import linear
 from .moe_gating_topk_softmax import moe_gating_topk_softmax
@@ -19,4 +21,6 @@ __all__ = [
     'linear',
     'moe_gating_topk_softmax',
     'multinomial_sampling',
+    'silu_and_mul',
+    'flash_attention_fwd',
 ]

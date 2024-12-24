@@ -339,6 +339,7 @@ def parse_args():
     ArgumentHelper.temperature(parser)
     ArgumentHelper.top_k(parser)
     ArgumentHelper.backend(parser)
+    ArgumentHelper.device(parser)
     # pytorch engine args
     pt_group = parser.add_argument_group('PyTorch engine arguments')
     ArgumentHelper.eager_mode(pt_group)
@@ -430,6 +431,7 @@ def main():
                     eager_mode=args.eager_mode,
                     enable_prefix_caching=args.enable_prefix_caching,
                     dtype=args.dtype,
+                    device_type=args.device,
                 )
             gen_config = GenerationConfig(top_k=args.top_k,
                                           top_p=args.top_p,

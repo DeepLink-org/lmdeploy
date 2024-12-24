@@ -32,6 +32,8 @@ from tqdm.asyncio import tqdm
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerBase, PreTrainedTokenizerFast)
 
+from lmdeploy.cli.utils import ArgumentHelper
+
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
 global args
@@ -44,6 +46,7 @@ class RequestFuncInput:
     prompt_len: int
     output_len: int
     model: str
+    temperature: float
     extra_request_body: Dict[str, Any]
 
 
@@ -153,7 +156,7 @@ async def async_request_openai_completions(
         payload = {
             'model': request_func_input.model,
             'prompt': prompt,
-            'temperature': 0.0,
+            'temperature': request_func_input.temperature,
             'best_of': 1,
             'max_tokens': request_func_input.output_len,
             'stream': not args.disable_stream,
@@ -641,6 +644,7 @@ async def benchmark(
     input_requests: List[Tuple[str, int, int]],
     request_rate: float,
     disable_tqdm: bool,
+    temperature: float,
     extra_request_body: Dict[str, Any],
 ):
     if backend in ASYNC_REQUEST_FUNCS:
@@ -656,6 +660,7 @@ async def benchmark(
         api_url=api_url,
         prompt_len=test_prompt_len,
         output_len=test_output_len,
+        temperature=temperature,
         extra_request_body=extra_request_body,
     )
     test_output = await request_func(request_func_input=test_input)
@@ -680,6 +685,7 @@ async def benchmark(
             api_url=api_url,
             prompt_len=prompt_len,
             output_len=output_len,
+            temperature=temperature,
             extra_request_body=extra_request_body,
         )
         tasks.append(
@@ -945,6 +951,7 @@ def run_benchmark(args_: argparse.Namespace):
                 input_requests=input_requests,
                 request_rate=args.request_rate,
                 disable_tqdm=args.disable_tqdm,
+                temperature=args.temperature,
                 extra_request_body=extra_request_body,
             ))
     else:
@@ -962,6 +969,7 @@ def run_benchmark(args_: argparse.Namespace):
                     input_requests=input_requests,
                     request_rate=rate,
                     disable_tqdm=args.disable_tqdm,
+                    temperature=args.temperature,
                     extra_request_body=extra_request_body,
                 ))
 
@@ -1106,5 +1114,6 @@ if __name__ == '__main__':
         help='Append given JSON object to the request payload. You can use '
         'this to specify additional generate params like sampling params.',
     )
+    ArgumentHelper.temperature(parser)
     args = parser.parse_args()
     run_benchmark(args)

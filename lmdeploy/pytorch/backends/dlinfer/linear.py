@@ -18,9 +18,9 @@ class DlinferLinearImpl(LinearImpl):
             weight = weight.data.t().contiguous()
         return weight, bias
 
-    def forward(self, x, weight: torch.Tensor, bias: Optional[torch.Tensor] = None, all_reduce: bool = False):
+    def forward(self, x, weight: torch.Tensor, bias: Optional[torch.Tensor] = None, all_reduce: bool = False, out=None):
         """forward."""
-        return linear(x, weight, bias, all_reduce)
+        return linear(x, weight, bias, all_reduce, out)
 
 
 class DlinferLinearBuilder(LinearBuilder):

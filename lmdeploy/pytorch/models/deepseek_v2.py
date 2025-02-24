@@ -61,7 +61,10 @@ class DeepseekV2BMM(nn.Module):
 
     def forward(self, x: torch.Tensor, output: torch.Tensor):
         """forward."""
-        torch.bmm(x.transpose(0, 1), self.weight, out=output.transpose(0, 1))
+        # torch.bmm(x.transpose(0, 1), self.weight, out=output.transpose(0, 1))
+        out = torch.bmm(x.transpose(0, 1), self.weight).transpose(0, 1)
+        output.copy_(out)
+        return output
 
 
 class DeepseekV2Attention(nn.Module):
@@ -226,7 +229,7 @@ class DeepseekV2Attention(nn.Module):
             k_pe,
             cos,
             sin,
-            inplace=False,
+            inplace=True,
         )
         query_states[..., nope_size:] = q_pe
         key_states[..., nope_size:] = k_pe

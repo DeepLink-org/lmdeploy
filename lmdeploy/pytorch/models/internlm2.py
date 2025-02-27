@@ -96,8 +96,13 @@ class InternLM2Attention(nn.Module):
         attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1)
 
         # o proj
-        attn_output = self.wo(attn_output)
-        return attn_output
+        # attn_output = self.wo(attn_output)
+        # return attn_output
+        new_out = torch.empty_like(hidden_states)
+        size = attn_output.size(1) // 2
+        self.wo(attn_output[0, :size, ...], new_out[0, :size, ...], async_op=True)
+        self.wo(attn_output[0, size:, ...], new_out[0, size:, ...], async_op=False)
+        return new_out
 
 
 class InternLM2MLP(nn.Module):
@@ -129,11 +134,28 @@ class InternLM2MLP(nn.Module):
                                        device=device,
                                        is_tp=True)
 
+    def w2_test(self, act, out, async_op):
+        self.w2(act, out, async_op)
+        return out
+
     def forward(self, x):
         """forward."""
         gate_up = self.gate_up_proj(x)
         act = self.act_fn(gate_up)
-        return self.w2(act)
+        # return self.w2(act)
+        size = act.shape[1] // 2
+        res = torch.empty_like(x)
+        act1 = act[0, :size, ...]
+        act2 = act[0, size:, ...]
+        self.w2_test(act1, res[0, :size, ...], async_op=True)
+        self.w2_test(act2, res[0, size:, ...], async_op=False)
+        return res
+
+    # def forward(self, x):
+    #     """forward."""
+    #     gate_up = self.gate_up_proj(x)
+    #     act = self.act_fn(gate_up)
+    #     return self.w2(act)
 
 
 class InternLM2DecoderLayer(nn.Module):

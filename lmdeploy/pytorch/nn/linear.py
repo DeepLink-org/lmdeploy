@@ -1086,18 +1086,27 @@ class BaseLinear(nn.Module):
         self.register_parameter('weight', weight)
         self.register_parameter('bias', bias)
 
-    def forward(self, x):
+    def forward(self, x, out=None, async_op=False):
         """forward of linear layer."""
         all_reduce = False if self.colwise else self.is_tp
         all_reduce = all_reduce and self.all_reduce
-        if len(self.lora_adapters) == 0:
-            return self.impl.forward(x, self.weight, self.bias, all_reduce)
 
-        out = self.impl.forward(x, self.weight, self.bias, False)
+        if out is None:
+            if len(self.lora_adapters) == 0:
+                return self.impl.forward(x, self.weight, self.bias, all_reduce)
+
+            out = self.impl.forward(x, self.weight, self.bias, False)
+        else:
+            if len(self.lora_adapters) == 0:
+                self.impl.forward(x, self.weight, self.bias, all_reduce, out=out, async_op=async_op)
+                return out
+
+            self.impl.forward(x, self.weight, self.bias, False, out=out, async_op=async_op)
+
         for lora_adapter in self.lora_adapters.values():
             out = lora_adapter(x, out)
         if all_reduce:
-            dist.all_reduce(out)
+            dist.all_reduce(out, async_op=async_op)
         return out
 
 

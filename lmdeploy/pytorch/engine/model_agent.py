@@ -117,6 +117,52 @@ def cache_swapping(cache_engine: CacheEngine, swap_in_map: dict, swap_out_map: d
     if issued_cache_op:
         cache_engine.events.wait()
 
+def split_batch_inputs(
+    inputs: ModelInputs
+):
+    if inputs.is_decoding:
+        mid_batch = inputs.seq_length.shape[0] // 2
+        mid_len = mid_batch
+    else:
+        mid_batch = 0
+        mid_len = 0
+        batch = inputs.seq_length.shape[0]
+        half_len = inputs.seq_length.sum() // 2
+        for i in range(0, batch - 1): 
+            mid_len += inputs.seq_length[i]
+            if mid_len >= half_len:
+                mid_batch = i + 1
+                break
+
+    input1 = ModelInputs(
+        input_ids=inputs.input_ids[:,:mid_len],
+        seq_length=inputs.seq_length[:mid_batch],
+        history_lengths=inputs.history_lengths[:mid_batch],
+        block_offsets=inputs.block_offsets[:mid_batch],
+        is_decoding=inputs.is_decoding,
+        num_ignored_history=inputs.num_ignored_history[:mid_batch],
+        local_adapter_ids=inputs.local_adapter_ids if inputs.local_adapter_ids is None else inputs.local_adapter_ids[:mid_batch],
+        vision_inputs=inputs.vision_inputs if inputs.vision_inputs is None else inputs.vision_inputs[:mid_batch],
+        cross_length=inputs.cross_length if inputs.cross_length is None else inputs.cross_length[:mid_batch],
+        history_cross_length=inputs.history_cross_length if inputs.history_cross_length is None else inputs.history_cross_length[:mid_batch],
+        model_metas=None if inputs.model_metas is None else inputs.model_metas[:mid_batch]
+    )
+    
+    input2 = ModelInputs(
+        input_ids=inputs.input_ids[:,mid_len:],
+        seq_length=inputs.seq_length[mid_batch:],
+        history_lengths=inputs.history_lengths[mid_batch:],
+        block_offsets=inputs.block_offsets[mid_batch:],
+        is_decoding=inputs.is_decoding,
+        num_ignored_history=inputs.num_ignored_history[mid_batch:],
+        local_adapter_ids=inputs.local_adapter_ids if inputs.local_adapter_ids is None else inputs.local_adapter_ids[mid_batch:],
+        vision_inputs=inputs.vision_inputs if inputs.vision_inputs is None else inputs.vision_inputs[mid_batch:],
+        cross_length=inputs.cross_length if inputs.cross_length is None else inputs.cross_length[mid_batch:],
+        history_cross_length=inputs.history_cross_length if inputs.history_cross_length is None else inputs.history_cross_length[mid_batch:],
+        model_metas=None if inputs.model_metas is None else inputs.model_metas[mid_batch:]
+    )
+    
+    return [input1, input2]
 
 @torch.inference_mode()
 def model_forward(
@@ -126,29 +172,165 @@ def model_forward(
     world_size: int = 1,
     stream: torch.cuda.Stream = None,
 ):
-    """perform model forward."""
     stream = stream or torch.cuda.current_stream()
-    with torch.cuda.stream(stream):
-        # forward
-        ctx_mgr = model.ctx_mgr
-        context = ctx_mgr.build_context(
-            inputs=inputs,
-            model_config=cache_engine.model_config,
-            world_size=world_size,
-            kv_caches=cache_engine.gpu_cache,
-            kv_quant_policy=cache_engine.cache_config.quant_policy,
-        )
-        with ctx_mgr.context(context):
-            model_metas = None
-            model_metas = model.update_model_metas(
-                past_key_values=cache_engine.gpu_cache,
-                context=context,
+    """perform model forward."""
+    if not inputs.is_decoding and inputs.seq_length.shape[0] > 1:
+        stream2 = torch.cuda.Stream()
+        splited_inputs = split_batch_inputs(inputs)
+        with torch.cuda.stream(stream):
+            # forward
+            ctx_mgr = model.ctx_mgr
+            context0 = ctx_mgr.build_context(
+                inputs=splited_inputs[0],
+                model_config=cache_engine.model_config,
+                world_size=world_size,
+                kv_caches=cache_engine.gpu_cache,
+                kv_quant_policy=cache_engine.cache_config.quant_policy,
             )
-            input_dict = model.prepare_inputs_for_generation(
-                past_key_values=cache_engine.gpu_cache,
-                context=context,
+            with ctx_mgr.context(context0):
+                model_metas = None
+                model_metas0 = model.update_model_metas(
+                    past_key_values=cache_engine.gpu_cache,
+                    context=context0,
+                )
+                input_dict0 = model.prepare_inputs_for_generation(
+                    past_key_values=cache_engine.gpu_cache,
+                    context=context0,
+                )
+            with torch.cuda.stream(stream2):
+                context1 = ctx_mgr.build_context(
+                    inputs=splited_inputs[1],
+                    model_config=cache_engine.model_config,
+                    world_size=world_size,
+                    kv_caches=cache_engine.gpu_cache,
+                    kv_quant_policy=cache_engine.cache_config.quant_policy,
+                )
+                with ctx_mgr.context(context1):
+                    model_metas = None
+                    model_metas1 = model.update_model_metas(
+                        past_key_values=cache_engine.gpu_cache,
+                        context=context1,
+                    )
+                    input_dict1 = model.prepare_inputs_for_generation(
+                        past_key_values=cache_engine.gpu_cache,
+                        context=context1,
+                    )
+            
+            with ctx_mgr.context(context0):
+                input_ids0 = input_dict0["input_ids"]
+                position_ids0 = input_dict0["position_ids"]
+                past_key_values0 = input_dict0["past_key_values"]
+                attn_metadata0 = input_dict0["attn_metadata"]
+                inputs_embeds0 = input_dict0["inputs_embeds"]
+            
+            with torch.cuda.stream(stream2):
+                with ctx_mgr.context(context1):
+                    input_ids1 = input_dict1["input_ids"]
+                    position_ids1 = input_dict1["position_ids"]
+                    past_key_values1 = input_dict1["past_key_values"]
+                    attn_metadata1 = input_dict1["attn_metadata"]
+                    inputs_embeds1 = input_dict1["inputs_embeds"]
+                
+            with ctx_mgr.context(context0):
+                if inputs_embeds0 is None:
+                    inputs_embeds0 = model.model.model.tok_embeddings(input_ids0)
+                hidden_states0 = inputs_embeds0
+            
+                # rotary embedding
+                cos, sin = model.model.model.rotary_emb(hidden_states0, position_ids0)
+                cos, sin = cos[0], sin[0]
+                rotary_pos_emb0 = (cos, sin)
+            
+            with torch.cuda.stream(stream2):
+                with ctx_mgr.context(context1):
+                    if inputs_embeds1 is None:
+                        inputs_embeds1 = model.model.model.tok_embeddings(input_ids1)
+                    hidden_states1 = inputs_embeds1
+                    
+                    # rotary embedding
+                    cos, sin = model.model.model.rotary_emb(hidden_states1, position_ids1)
+                    cos, sin = cos[0], sin[0]
+                    rotary_pos_emb1 = (cos, sin)
+            
+            residual0 = residual1 = None
+            for idx, decoder_layer in enumerate(model.model.model.layers):
+                attention_norm = decoder_layer.attention_norm
+                attention = decoder_layer.attention
+                ffn_norm = decoder_layer.ffn_norm
+                feed_forward = decoder_layer.feed_forward
+
+                # attention_norm = decoder_layer.input_layernorm
+                # attention = decoder_layer.self_attn
+                # ffn_norm = decoder_layer.post_attention_layernorm
+                # feed_forward = decoder_layer.mlp
+
+                with ctx_mgr.context(context0):
+                    past_key_value0 = past_key_values0[idx]                    
+                    if residual0 is None:
+                        residual0 = hidden_states0
+                        hidden_states0 = attention_norm(hidden_states0)
+                    else:
+                        hidden_states0, residual0 = attention_norm(hidden_states0, residual0)
+
+                    hidden_states0 = attention(
+                        hidden_states0,
+                        rotary_pos_emb0,
+                        past_key_value0,
+                        attn_metadata0
+                    )
+
+                with torch.cuda.stream(stream2):
+                    with ctx_mgr.context(context1):
+                        past_key_value1 = past_key_values1[idx]
+                        if residual1 is None:
+                            residual1 = hidden_states1
+                            hidden_states1 = attention_norm(hidden_states1)
+                        else:
+                            hidden_states1, residual1 = attention_norm(hidden_states1, residual1)
+                        hidden_states1 = attention(
+                            hidden_states1,
+                            rotary_pos_emb1,
+                            past_key_value1,
+                            attn_metadata1
+                        )
+    
+                with ctx_mgr.context(context0):
+                    hidden_states0, residual0 = ffn_norm(hidden_states0, residual0)
+                    hidden_states0 = feed_forward(hidden_states0)
+                with torch.cuda.stream(stream2):
+                    with ctx_mgr.context(context1):
+                        hidden_states1, residual1 = ffn_norm(hidden_states1, residual1)
+                        hidden_states1 = feed_forward(hidden_states1)
+
+            with ctx_mgr.context(context0):
+                output0, _ = model.model.model.norm(hidden_states0, residual0)
+            with torch.cuda.stream(stream2):
+                with ctx_mgr.context(context1):
+                    output1, _ = model.model.model.norm(hidden_states1, residual1)
+            torch.cuda.synchronize()
+            output = torch.cat([output0, output1], dim=1)
+    else:
+        with torch.cuda.stream(stream):
+            # forward
+            ctx_mgr = model.ctx_mgr
+            context = ctx_mgr.build_context(
+                inputs=inputs,
+                model_config=cache_engine.model_config,
+                world_size=world_size,
+                kv_caches=cache_engine.gpu_cache,
+                kv_quant_policy=cache_engine.cache_config.quant_policy,
             )
-            output = model(**input_dict)
+            with ctx_mgr.context(context):
+                model_metas = None
+                model_metas = model.update_model_metas(
+                    past_key_values=cache_engine.gpu_cache,
+                    context=context,
+                )
+                input_dict = model.prepare_inputs_for_generation(
+                    past_key_values=cache_engine.gpu_cache,
+                    context=context,
+                )
+                output = model(**input_dict)
     return dict(hidden_states=output, model_metas=model_metas)
 
 

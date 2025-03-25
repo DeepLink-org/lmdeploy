@@ -1,6 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 
-from typing import List
+from typing import List, Any
 
 import torch
 import torch.distributed as dist
@@ -361,6 +361,15 @@ class FusedDeepEpMoEBlockedF8Impl(TritonFusedMoEBlockedF8Impl):
                 hidden_size=hidden_dim,
                 params_dtype=out_dtype,
             )
+        self.token_dispatcher_for2mb = DeepEPDispatcher(
+                group=ep_group,
+                router_topk=self.top_k,
+                permute_fusion=True,
+                num_experts=self.num_experts,
+                num_local_experts=self.num_experts // ep_size,
+                hidden_size=hidden_dim,
+                params_dtype=out_dtype,
+            )
         self.experts = DeepEPMoE(num_experts, ep_size, [block_size,block_size])
     
     def forward(self,
@@ -377,7 +386,7 @@ class FusedDeepEpMoEBlockedF8Impl(TritonFusedMoEBlockedF8Impl):
         recv_hidden_states, recv_topk_ids, recv_topk_weights, tokens_per_expert = (
             self.token_dispatcher.dispatch(
                 hidden_states,
-                topk_ids.to(torch.int32),
+                topk_ids.to(torch.int64),
                 topk_weights.to(torch.float32),
                 self.num_experts,
             )
@@ -385,6 +394,37 @@ class FusedDeepEpMoEBlockedF8Impl(TritonFusedMoEBlockedF8Impl):
         out_states = self.experts.forward(recv_hidden_states, tokens_per_expert, gate_up_weights, gate_up_scale,
                                  down_weights, down_scale)
         out_states = self.token_dispatcher.combine(out_states)
+        return out_states
+    
+    def forward_yield(self,
+                hidden_states: torch.Tensor,
+                topk_weights: torch.Tensor,
+                topk_ids: torch.LongTensor,
+                gate_up_weights: torch.Tensor,
+                gate_up_scale: torch.Tensor,
+                down_weights: torch.Tensor,
+                down_scale: torch.Tensor,
+                expert_list: List[int] = None,
+                tag: Any = None):
+        """forward_yield."""
+        topk_weights = _renormalize(topk_weights, self.renormalize)
+
+        _token_dispatcher = self.token_dispatcher
+        if tag is not None and tag[0] == "0":
+            _token_dispatcher = self.token_dispatcher
+        if tag is not None and tag[0] == "1":
+            _token_dispatcher = self.token_dispatcher_for2mb
+        recv_hidden_states, recv_topk_ids, recv_topk_weights, tokens_per_expert = (
+            yield from _token_dispatcher.dispatch_yield(
+                hidden_states,
+                topk_ids.to(torch.int64),
+                topk_weights.to(torch.float32),
+                self.num_experts,
+            )
+        )
+        out_states = self.experts.forward(recv_hidden_states, tokens_per_expert, gate_up_weights, gate_up_scale,
+                                 down_weights, down_scale)
+        out_states = yield from _token_dispatcher.combine_yield(out_states)
         return out_states
 
 class TritonFusedMoEBlockedF8Builder(FusedMoEBlockedF8Builder):

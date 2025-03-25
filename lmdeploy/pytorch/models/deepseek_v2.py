@@ -894,3 +894,5 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
                 else:
                     param = params_dict[name]
                     load_weight(param, loaded_weight)
+
+import lmdeploy.pytorch.models.utils.microbatch

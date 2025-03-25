@@ -181,7 +181,6 @@ class DeepEPDispatcher:
         num_max_dispatch_tokens_per_rank: int = 128,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         self.hidden_shape = hidden_states.shape
-        topk_idx = topk_idx.to(torch.int64)
         (
             hidden_states,
             topk_idx,
@@ -190,6 +189,39 @@ class DeepEPDispatcher:
             handle,
             event,
         ) = self.dispatch_normal(
+            hidden_states, topk_idx, topk_weights, num_experts, previous_event
+        )
+        self.tokens_per_expert = torch.tensor(
+            num_recv_tokens_per_expert_list,
+            device=hidden_states.device,
+            dtype=torch.int64,
+        )
+        tokens_per_expert = self.get_number_of_tokens_per_expert()
+        self.handle = handle
+        self.topk_idx = topk_idx
+        self.topk_weights = topk_weights
+        if hidden_states.shape[0] > 0:
+            hidden_states = self.get_permuted_hidden_states_by_experts(hidden_states)
+        return hidden_states, topk_idx, topk_weights, tokens_per_expert
+
+    def dispatch_yield(
+        self,
+        hidden_states: torch.Tensor,
+        topk_idx: torch.Tensor,
+        topk_weights: torch.Tensor,
+        num_experts: int,
+        previous_event=None,
+        num_max_dispatch_tokens_per_rank: int = 128,
+    ):
+        self.hidden_shape = hidden_states.shape
+        (
+            hidden_states,
+            topk_idx,
+            topk_weights,
+            num_recv_tokens_per_expert_list,
+            handle,
+            event,
+        ) = yield from self.dispatch_normal_yield(
             hidden_states, topk_idx, topk_weights, num_experts, previous_event
         )
         self.tokens_per_expert = torch.tensor(
@@ -256,6 +288,62 @@ class DeepEPDispatcher:
             event,
         )
 
+    def dispatch_normal_yield(
+        self,
+        x: torch.Tensor,
+        topk_idx: torch.Tensor,
+        topk_weights: torch.Tensor,
+        num_experts: int,
+        previous_event=None,
+        async_finish=True
+    ):
+        yield
+        previous_event = self.buffer_normal.capture() if async_finish else None
+        (
+            num_tokens_per_rank,
+            num_tokens_per_rdma_rank,
+            num_tokens_per_expert,
+            is_token_in_rank,
+            previous_event,
+        ) = self.buffer_normal.get_dispatch_layout(
+            topk_idx,
+            num_experts,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=previous_event is not None and async_finish,
+        )
+
+        (
+            recv_x,
+            recv_topk_idx,
+            recv_topk_weights,
+            num_recv_tokens_per_expert_list,
+            handle,
+            event,
+        ) = self.buffer_normal.dispatch(
+            x,
+            topk_idx=topk_idx,
+            topk_weights=topk_weights,
+            num_tokens_per_rank=num_tokens_per_rank,
+            num_tokens_per_rdma_rank=num_tokens_per_rdma_rank,
+            is_token_in_rank=is_token_in_rank,
+            num_tokens_per_expert=num_tokens_per_expert,
+            previous_event=previous_event,
+            async_finish=async_finish,
+            allocate_on_comm_stream=previous_event is not None and async_finish,
+        )
+
+        yield
+        if async_finish:
+            event.current_stream_wait()
+        return (
+            recv_x,
+            recv_topk_idx,
+            recv_topk_weights,
+            num_recv_tokens_per_expert_list,
+            handle,
+            event,
+        )
 
     def combine(
         self, hidden_states: torch.Tensor
@@ -268,6 +356,17 @@ class DeepEPDispatcher:
         self.handle = None
         return hidden_states.view(self.hidden_shape)
 
+    def combine_yield(
+        self, hidden_states: torch.Tensor
+    ):
+        if hidden_states.shape[0] > 0:
+            hidden_states = self.get_restored_hidden_states_by_experts(
+                hidden_states
+            )
+        hidden_states, event = yield from self.combine_normal_yield(hidden_states, self.handle)
+        self.handle = None
+        return hidden_states.view(self.hidden_shape)
+
     def combine_normal(self, x: torch.Tensor, handle: Tuple, previous_event=None):
         combined_x, _, event = self.buffer_normal.combine(
             x,
@@ -276,6 +375,22 @@ class DeepEPDispatcher:
             previous_event=previous_event,
             allocate_on_comm_stream=False,
         )
+        return combined_x, event
+
+    def combine_normal_yield(self, x: torch.Tensor, handle: Tuple, previous_event=None, async_finish=True):
+        yield
+        previous_event = self.buffer_normal.capture() if async_finish else None
+        combined_x, _, event = self.buffer_normal.combine(
+            x,
+            handle,
+            async_finish=async_finish,
+            previous_event=previous_event,
+            allocate_on_comm_stream=previous_event is not None and async_finish,
+        )
+
+        yield
+        if async_finish:
+            event.current_stream_wait()
         return combined_x, event
 
     def _indices_to_multihot(self, indices, probs):

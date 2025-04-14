@@ -271,6 +271,7 @@ class InternLM2Model(nn.Module):
         # decoding
         residual = None
         for idx, decoder_layer in enumerate(self.layers):
+            # print(f"idx: {idx}\n hidden_states:\n{hidden_states}, {hidden_states.shape}", flush=True)
             past_key_value = past_key_values[idx]
             hidden_states, residual = decoder_layer(
                 hidden_states,

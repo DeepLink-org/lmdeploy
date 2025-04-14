@@ -46,6 +46,8 @@ def _get_dp_gather(is_tp: bool):
 
 def _gather_input(x: torch.Tensor, tp_sizes: List[int]):
     """gather input."""
+    # torch._dynamo.graph_break()
+    # print(f"x.shape: {x.shape}, tp_sizes:{tp_sizes}", flush=True)
     shape0 = x.shape[:-2]
     shape1 = x.shape[-1:]
     shapes = [shape0 + (size, ) + shape1 for size in tp_sizes]

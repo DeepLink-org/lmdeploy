@@ -19,6 +19,7 @@ class DlinferRMSNormImpl(RMSNormImpl):
             x = rms_norm(x, weight, self.eps)
             return x
         else:
+            # print(f"info before npu_add_rms_norm: x:\n {x}", "\n", f"info before npu_add_rms_norm: residual:\n {residual}", "\n", f"info before npu_add_rms_norm: weight:\n {weight}", "\n", f"x.shape: {x.shape}", f"residual.shape: {residual.shape}", f"weight.shape: {weight.shape}", flush=True)
             x, residual = rms_norm(x, weight, self.eps, residual=residual)
             return x, residual
 

@@ -6,7 +6,7 @@ import concurrent.futures
 import dataclasses
 import os
 import random
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager, closing, suppress
 from copy import deepcopy
 from functools import partial
 from itertools import count
@@ -303,7 +303,8 @@ class AsyncEngine(LogitsMixin):
         self.free_insts = None
         self.instances.clear()
         self.engine.close()
-        torch._C._cuda_clearCublasWorkspaces()
+        with suppress(AttributeError):
+            torch._C._cuda_clearCublasWorkspaces()
 
     def __enter__(self):
         return self

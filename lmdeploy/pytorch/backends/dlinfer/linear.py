@@ -10,6 +10,22 @@ from lmdeploy.pytorch.kernels.dlinfer import linear
 from ..linear import LinearBuilder, LinearImpl
 
 
+def _reduce_scatter_input(out: torch.Tensor, rank: int, tp_sizes: List[int]):
+    """reduce scatter."""
+    out = out.transpose(0, -2)
+    if not out.is_contiguous():
+        out = out.contiguous()
+    outs = out.split(tp_sizes, 0)
+    out = outs[rank]
+    outs = list(outs)
+    # dist.reduce_scatter(out, outs)
+    for tensor in outs:
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+    out.copy_(outs[rank])
+
+    out = out.transpose(0, -2)
+    return out
+
 class DlinferLinearImpl(LinearImpl):
     """Dlinfer linear implementation api."""
 
@@ -29,7 +45,10 @@ class DlinferLinearImpl(LinearImpl):
         """forward."""
         out = linear(x, weight, bias, False)
         if all_reduce:
-            dist.all_reduce(out)
+            if scatter_size is not None:
+                out = _reduce_scatter_input(out, rank, scatter_size)
+            else:
+                dist.all_reduce(out)
         return out
 
 

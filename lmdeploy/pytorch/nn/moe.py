@@ -66,10 +66,14 @@ class LinearWeights(nn.Module):
                  dtype: torch.dtype,
                  device: torch.device,
                  expert_list: List[int] = None,
-                 ep: bool = False):
+                 ep: bool = False,
+                 layer_idx: int = 0):
         super().__init__()
         weight = torch.empty((num_experts, out_features, in_features), dtype=dtype, device=device)
         weight = torch.nn.Parameter(weight, requires_grad=False)
+        if ep and enable_eplb and expert_list is not None:
+            weight.expert_list = expert_list  # ✅ 添加这一行，仅在 EPLB 时才加
+            weight.layer_idx = layer_idx
         self.register_parameter('weight', weight)
         self.ep = ep
         self.expert_list = expert_list
@@ -453,7 +457,8 @@ class LinearWeightsBlockedF8(LinearWeights):
                  dtype: torch.dtype,
                  device: torch.device,
                  expert_list: List[int] = None,
-                 ep: bool = False):
+                 ep: bool = False,
+                 layer_idx: int = 0):
         super().__init__(
             num_experts=num_experts,
             in_features=in_features,
@@ -463,6 +468,7 @@ class LinearWeightsBlockedF8(LinearWeights):
             device=device,
             expert_list=expert_list,
             ep=ep,
+            layer_idx=layer_idx,
         )
         self.block_size = block_size
         scale = torch.empty((num_experts, div_up(out_features, block_size), div_up(in_features, block_size)),
@@ -573,7 +579,8 @@ class FusedMoEBlockedF8(nn.Module):
                                               dtype=fp8_dtype,
                                               device=device,
                                               expert_list=expert_list,
-                                              ep=self.ep_size > 1)
+                                              ep=self.ep_size > 1,
+                                              layer_idx=layer_idx)
         self.down = LinearWeightsBlockedF8(
             num_experts,
             ffn_dim,
@@ -584,7 +591,7 @@ class FusedMoEBlockedF8(nn.Module):
             device=device,
             expert_list=expert_list,
             ep=self.ep_size > 1,
-        )
+            layer_idx=layer_idx)
 
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim

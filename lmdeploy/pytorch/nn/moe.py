@@ -74,6 +74,8 @@ class LinearWeights(nn.Module):
         if ep and enable_eplb and expert_list is not None:
             weight.expert_list = expert_list  # ✅ 添加这一行，仅在 EPLB 时才加
             weight.layer_idx = layer_idx
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        print(f"[Rank {rank}] ✅ Load Expert {expert_list} for Layer {layer_idx} ({weight_type})")
         self.register_parameter('weight', weight)
         self.ep = ep
         self.expert_list = expert_list

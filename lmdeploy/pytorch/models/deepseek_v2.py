@@ -22,8 +22,11 @@ from lmdeploy.pytorch.weight_loader.model_weight_loader import load_weight
 from lmdeploy.utils import get_logger
 
 from .utils.cudagraph import CudaGraphMixin
+import os
+enable_eplb = os.environ.get('EPLB_ENABLED', '0') == '1'
 
 logger = get_logger('lmdeploy')
+
 
 
 # microbatch
@@ -668,7 +671,10 @@ class DeepseekV2MoE(nn.Module):
         quantization_config = getattr(config, 'quantization_config', None)
         self.hidden_dim = config.hidden_size
         self.ffn_dim = config.moe_intermediate_size
-        self.num_experts = config.n_routed_experts
+        if enable_eplb:
+            self.num_experts = config.n_routed_experts + 32
+        else:
+            self.num_experts = config.n_routed_experts
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.routed_scaling_factor = config.routed_scaling_factor
@@ -1364,6 +1370,23 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
         num_nextn_predict_layers = getattr(self.config, 'num_nextn_predict_layers', 1)
         nextn_keys = [f'.layers.{num_hidden_layers+i}' for i in range(num_nextn_predict_layers)]
 
+        # 分层行为：每层独立专家映射表
+        layer_expert_params_mapping = {}
+        if enable_eplb:
+            moe_layers = []
+            for layer_idx in range(num_hidden_layers):
+                if config.n_routed_experts is not None and layer_idx >= config.first_k_dense_replace and layer_idx % config.moe_layer_freq == 0:
+                    moe_layers.append(layer_idx)
+
+            for layer_idx in moe_layers:
+                expert_params = []
+                for exp_id in range(num_experts):
+                    gate_param = (f'.layers.{layer_idx}.mlp.experts.gate_up', f'.layers.{layer_idx}.mlp.experts.{exp_id}.gate_proj', exp_id, 'gate')
+                    up_param = (f'.layers.{layer_idx}.mlp.experts.gate_up', f'.layers.{layer_idx}.mlp.experts.{exp_id}.up_proj', exp_id, 'up')
+                    down_param = (f'.layers.{layer_idx}.mlp.experts.down', f'.layers.{layer_idx}.mlp.experts.{exp_id}.down_proj', exp_id, 'down')
+                    expert_params += [gate_param, up_param, down_param]
+                layer_expert_params_mapping[layer_idx] = expert_params
+
         params_dict = dict(self.named_parameters())
         for name, loaded_weight in weights:
             # zcx begin
@@ -1386,7 +1409,12 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
             if name.endswith(scale_suffix):
                 name = name[:-len(scale_suffix)] + '.scale'
             if '.experts' in name:
-                self._load_weight_experts(name, loaded_weight, params_dict, expert_params_mapping=expert_params_mapping)
+                if enable_eplb:
+                    self._load_weight_experts_with_eplb(name, loaded_weight, params_dict,
+                                            layer_expert_params_mapping=layer_expert_params_mapping)
+                else:
+                    self._load_weight_experts(name, loaded_weight, params_dict,
+                                            expert_params_mapping=expert_params_mapping)
             elif '.self_attn' in name and getattr(config, 'use_mla', True):
                 # attention
                 self._load_weight_attention(name, loaded_weight, params_dict, update_pe_mapping)

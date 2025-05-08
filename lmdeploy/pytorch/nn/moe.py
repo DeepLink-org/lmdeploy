@@ -69,6 +69,7 @@ class LinearWeights(nn.Module):
                  ep: bool = False,
                  layer_idx: int = 0):
         super().__init__()
+        self.layer_idx = layer_idx
         weight = torch.empty((num_experts, out_features, in_features), dtype=dtype, device=device)
         weight = torch.nn.Parameter(weight, requires_grad=False)
         if ep and enable_eplb and expert_list is not None:
@@ -120,6 +121,7 @@ class LinearWeights(nn.Module):
 
     def weight_loader_ep(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int, shard_id: str):
         """weight loader."""
+        world_size, rank = get_tp_world_rank()
         expert_list = self.expert_list
         if expert_id not in expert_list:
             return
@@ -169,7 +171,7 @@ class LinearWeights(nn.Module):
                     else:
                         raise RuntimeError(f'Unknown shard_id: {shard_id}')
                     param_data.copy_(loaded_weight.to(param_data.dtype))
-                print(f"[Rank {rank}] ✅ Loaded Expert {expert_id} for Layer {layer_idx} ({shard_id}) shape={param_data.shape}")
+                # print(f"[Rank {rank}] ✅ Loaded Expert {expert_id} for Layer {self.layer_idx} ({shard_id}) shape={param_data.shape}")
 
 
 def _gather_input(x: torch.Tensor, tp_sizes: List[int]):
@@ -566,6 +568,8 @@ class FusedMoEBlockedF8(nn.Module):
                                        layer_idx=layer_idx)
 
         if self.ep_size > 1:
+            if rank == 0:
+                print("================================geting expert list==========================")
             expert_list = self.impl.ep_expert_list(self.ep_size, rank)
             num_experts = len(expert_list)
         else:

@@ -1227,7 +1227,38 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
             param = params_dict[name]
             load_weight(param, loaded_weight)
 
-    
+    def _load_weight_experts_with_eplb(self, name: str, loaded_weight: torch.Tensor, params_dict: Dict[str, nn.Parameter],
+                         layer_expert_params_mapping: Dict[int, List]):
+        """Load weight for experts with layer-wise expert mapping."""
+        # 从name解析layer_idx
+        strs = name.split(".")
+        if len(strs) < 3 or not strs[2].isdigit():
+            raise ValueError(f"Cannot parse layer index from weight name {name}")
+        layer_idx = int(strs[2])
+
+        # 如果不是MoE层（例如普通Dense层），直接按原来逻辑加载
+        if layer_idx not in layer_expert_params_mapping:
+            param = params_dict[name]
+            load_weight(param, loaded_weight)
+            return
+
+        # 找到该层的expert参数映射
+        expert_params_mapping = layer_expert_params_mapping[layer_idx]
+
+        # 在该层的专家映射中匹配
+        for (param_name, weight_name, expert_id, shard_id) in expert_params_mapping:
+            if weight_name not in name:
+                continue
+            # 匹配成功后，把weight_name替换为param_name，找到目标参数
+            new_name = name.replace(weight_name, param_name)
+            param = params_dict[new_name]
+            load_weight(param, loaded_weight, expert_id=expert_id, shard_id=shard_id)
+            break
+        else:
+            # 如果这一层里也没匹配上，就直接按普通参数处理
+            param = params_dict[name]
+            load_weight(param, loaded_weight)
+
     def _load_weight_attention(self, name: str, loaded_weight: torch.Tensor, params_dict: Dict[str, nn.Parameter],
                                update_pe_mapping: List):
         """load weight attention."""

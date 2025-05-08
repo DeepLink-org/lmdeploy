@@ -23,11 +23,12 @@ def load_weight(param: torch.nn.Parameter, loaded_weight: torch.Tensor, **kwargs
 
     if expert_id is not None and hasattr(param, 'expert_list'):
         if expert_id not in param.expert_list:
-            print(f"[Rank {rank}] 🔁 Skip Expert {expert_id} for param {param.shape}")
+            # print(f"[Rank {rank}] 🔁 Skip Expert {expert_id} for param {param.shape}")
             return
         else:
             layer_idx = getattr(param, 'layer_idx', '?')
-            print(f"[Rank {rank}] ✅ Load Expert {expert_id} for Layer {layer_idx} ({shard_id})")
+            if rank == 0:
+                print(f"[Rank {rank}] ✅ Load Expert {expert_id} for Layer {layer_idx} ({shard_id})")
             
     if hasattr(param, 'weight_loader'):
         param.weight_loader(param, loaded_weight, **kwargs)

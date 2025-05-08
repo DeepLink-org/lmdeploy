@@ -1113,6 +1113,7 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
                  dtype: torch.dtype = None,
                  device: torch.device = None):
         super().__init__()
+        config.num_hidden_layers = 4
         self.config = config
         self.quantization_config = getattr(config, 'quantization_config', None)
         self.dtype = dtype
@@ -1365,6 +1366,13 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
 
         params_dict = dict(self.named_parameters())
         for name, loaded_weight in weights:
+            # zcx begin
+            strs = name.split(".")
+            if len(strs) >= 3 and str.isdigit(strs[2]):
+                layer_number = int(strs[2])
+                if layer_number >= 4:
+                    continue
+            # zcx end
             if 'rotary_emb.inv_freq' in name:
                 continue
             if ('rotary_emb.cos_cached' in name or 'rotary_emb.sin_cached' in name):

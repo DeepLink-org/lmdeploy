@@ -21,6 +21,8 @@ from ..moe import (FusedMoEBlockedF8Builder, FusedMoEBlockedF8Impl, FusedMoEBuil
                    FusedMoEW8A8Impl)
 
 logger = get_logger('lmdeploy')
+import os
+enable_eplb = os.environ.get('EPLB_ENABLED', '0') == '1'
 
 
 class TritonFusedMoEImpl(FusedMoEImpl):
@@ -407,7 +409,9 @@ class FusedMoENormal:
                  num_experts: int,
                  hidden_dim: int,
                  block_size: int = 128,
-                 out_dtype: torch.dtype = torch.bfloat16):
+                 out_dtype: torch.dtype = torch.bfloat16,
+                 layer_idx: int = 0):
+        self.layer_idx = layer_idx
         self.experts = DeepEPExpertsGroupedGEMM(num_experts, ep_size, [block_size, block_size])
         self.token_dispatcher = TokenDispatcherBuilder.build(
             group=ep_group,
@@ -534,9 +538,9 @@ class FusedMoENormal:
         if enable_eplb:
             num_groups, num_nodes, weight = self._load_ep_mapping("ep_mapping_json_prefill.json")
             phy2log, log2phy, logcnt = self.rebalance_experts(weight, num_experts, num_groups, num_nodes, self.world_size)
-            self.phy2log = phy2log[0].to('cuda')
-            self.log2phy = log2phy[0].to('cuda')
-            self.logcnt = logcnt[0].to('cuda')
+            self.phy2log = phy2log[self.layer_idx].to('cuda')
+            self.log2phy = log2phy[self.layer_idx].to('cuda')
+            self.logcnt = logcnt[self.layer_idx].to('cuda')
             expert_per_rank = (self.num_experts + world_size - 1) // world_size
             first_expert = rank * expert_per_rank
             last_expert = min(first_expert + expert_per_rank, self.num_experts)
@@ -632,7 +636,9 @@ class FusedMoELowLatency:
                  num_experts: int,
                  hidden_dim: int,
                  block_size: int = 128,
-                 out_dtype: torch.dtype = torch.bfloat16):
+                 out_dtype: torch.dtype = torch.bfloat16,
+                 layer_idx: int = 0):
+        self.layer_idx = layer_idx
         self.num_experts = num_experts
         self.experts = DeepEPExpertsDeepGEMM(num_experts, ep_size, block_size, out_dtype)
         self.token_dispatcher = DeepEPTokenDispatcherLowLatency(
@@ -758,9 +764,9 @@ class FusedMoELowLatency:
         if enable_eplb:
             num_groups, num_nodes, weight = self._load_ep_mapping("ep_mapping_json_decode.json")
             phy2log, log2phy, logcnt = self.rebalance_experts(weight, num_experts, num_groups, num_nodes, world_size)
-            self.phy2log = phy2log[0].to('cuda')
-            self.log2phy = log2phy[0].to('cuda')
-            self.logcnt = logcnt[0].to('cuda')
+            self.phy2log = phy2log[self.layer_idx].to('cuda')
+            self.log2phy = log2phy[self.layer_idx].to('cuda')
+            self.logcnt = logcnt[self.layer_idx].to('cuda')
             expert_per_rank = (self.num_experts + world_size - 1) // world_size
             first_expert = rank * expert_per_rank
             last_expert = min(first_expert + expert_per_rank, self.num_experts)
@@ -904,10 +910,10 @@ class FusedDeepEpMoEBlockedF8Impl(TritonFusedMoEBlockedF8Impl):
                                          chunk_size=16 * 1024)
         elif low_latency_mode:
             return FusedMoELowLatency(self.ep_size, self.ep_group, self.num_experts, self.hidden_dim, self.block_size,
-                                      self.out_dtype)
+                                      self.out_dtype, layer_idx=self.layer_idx)
         else:
             return FusedMoENormal(self.ep_size, self.ep_group, self.num_experts, self.hidden_dim, self.block_size,
-                                  self.out_dtype)
+                                  self.out_dtype, layer_idx=self.layer_idx)
 
 
 class TritonFusedMoEBlockedF8Builder(FusedMoEBlockedF8Builder):

@@ -1,18 +1,25 @@
 import numpy as np
 import json
 
-num_experts = 12
+# 配置参数
+num_experts = 256
+layers = 12  # 层数
 np.random.seed(42)  # 保持可复现
 
-# 随机整数负载：每个专家处理 80~160 个 token
-weight = np.random.randint(low=80, high=161, size=num_experts).tolist()
+# 随机生成 weight：形状为 [layers, num_experts]，每个专家处理 80~160 个 token
+weight = np.random.randint(low=80, high=161, size=(layers, num_experts)).tolist()
 
+# 构造数据
 data = {
     "num_groups": 4,
     "num_nodes": 1,
-    "weight": weight
+    "weight": weight  # weight 的形状为 [layers, num_experts]
 }
 
-with open("/nvme1/liudongyan/workspace/lmdeploy/ep_mapping_json_path_logicexp12.json", "w") as f:
+# 写入 JSON 文件
+output_path = "/nvme1/liudongyan/workspace/lmdeploy/ep_mapping_json_prefill.json"
+with open(output_path, "w") as f:
     json.dump(data, f, indent=2)
-print("JSON 写入完成, weight 总和 =", sum(weight))
+
+# 打印信息
+print("JSON 写入完成, weight 总和 =", np.sum(weight))

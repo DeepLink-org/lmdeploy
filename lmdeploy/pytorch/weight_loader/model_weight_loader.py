@@ -16,18 +16,18 @@ logger = get_logger('lmdeploy')
 
 def load_weight(param: torch.nn.Parameter, loaded_weight: torch.Tensor, **kwargs):
     """load weight."""
-    # expert_id = kwargs.get('expert_id', None)
-    # # for debug
-    # shard_id = kwargs.get('shard_id', '?')
-    # rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+    expert_id = kwargs.get('expert_id', None)
+    # for debug
+    shard_id = kwargs.get('shard_id', '?')
+    rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
 
-    # if expert_id is not None and hasattr(param, 'expert_list'):
-    #     if expert_id not in param.expert_list:
-    #         print(f"[Rank {rank}] 🔁 Skip Expert {expert_id} for param {param.shape}")
-    #         return
-    #     else:
-    #         layer_idx = getattr(param, 'layer_idx', '?')
-    #         print(f"[Rank {rank}] ✅ Load Expert {expert_id} for Layer {layer_idx} ({shard_id})")
+    if expert_id is not None and hasattr(param, 'expert_list'):
+        if expert_id not in param.expert_list:
+            print(f"[Rank {rank}] 🔁 Skip Expert {expert_id} for param {param.shape}")
+            return
+        else:
+            layer_idx = getattr(param, 'layer_idx', '?')
+            print(f"[Rank {rank}] ✅ Load Expert {expert_id} for Layer {layer_idx} ({shard_id})")
             
     if hasattr(param, 'weight_loader'):
         param.weight_loader(param, loaded_weight, **kwargs)

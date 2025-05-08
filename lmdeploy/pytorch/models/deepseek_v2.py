@@ -1227,6 +1227,7 @@ class DeepseekV2ForCausalLM(nn.Module, CudaGraphMixin):
             param = params_dict[name]
             load_weight(param, loaded_weight)
 
+    
     def _load_weight_attention(self, name: str, loaded_weight: torch.Tensor, params_dict: Dict[str, nn.Parameter],
                                update_pe_mapping: List):
         """load weight attention."""

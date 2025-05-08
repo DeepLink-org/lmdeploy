@@ -545,6 +545,9 @@ class FusedMoENormal:
             first_expert = rank * expert_per_rank
             last_expert = min(first_expert + expert_per_rank, self.num_experts)
             sliced_phy2log = self.phy2log[first_expert:last_expert].tolist()
+            if rank == 0:
+                logger.info(f"ep_expert_list: {sliced_phy2log}")
+                logger.info(f"len_ep_expert_list: {len(sliced_phy2log)}")
 
             return sliced_phy2log
         else:

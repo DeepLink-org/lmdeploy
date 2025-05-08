@@ -17,7 +17,7 @@ data = {
 }
 
 # 写入 JSON 文件
-output_path = "/nvme1/liudongyan/workspace/lmdeploy/ep_mapping_json_prefill.json"
+output_path = "/opt/workspace/workspace/lmdeploy_internLM/lmdeploy/ep_mapping_json_decode.json"
 with open(output_path, "w") as f:
     json.dump(data, f, indent=2)
 

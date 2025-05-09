@@ -171,7 +171,9 @@ class LinearWeights(nn.Module):
                     else:
                         raise RuntimeError(f'Unknown shard_id: {shard_id}')
                     param_data.copy_(loaded_weight.to(param_data.dtype))
-                # print(f"[Rank {rank}] ✅ Loaded Expert {expert_id} for Layer {self.layer_idx} ({shard_id}) shape={param_data.shape}")
+             # 打印日志：记录每个 rank 每层加载的专家 ID、参数名称和权重形状
+            param_name = f"Layer_{self.layer_idx}_{shard_id}_Expert_{expert_id}"
+            print(f"[Rank {rank}] ✅ Loaded Expert {expert_id} for {param_name} shape={param_data.shape}")
 
 
 def _gather_input(x: torch.Tensor, tp_sizes: List[int]):

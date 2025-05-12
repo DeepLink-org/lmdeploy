@@ -12,6 +12,10 @@ from lmdeploy.pytorch.model_inputs import get_step_ctx_manager
 from ..backends import OpType, get_backend
 from .utils import div_up
 
+import os
+enable_eplb = os.environ.get('EPLB_ENABLED', '0') == '1'
+from collections import defaultdict
+
 
 class MoeType(Enum):
     """batch ecex type."""
@@ -62,10 +66,17 @@ class LinearWeights(nn.Module):
                  dtype: torch.dtype,
                  device: torch.device,
                  expert_list: List[int] = None,
-                 ep: bool = False):
+                 ep: bool = False,
+                 layer_idx: int = 0):
         super().__init__()
+        self.layer_idx = layer_idx
         weight = torch.empty((num_experts, out_features, in_features), dtype=dtype, device=device)
         weight = torch.nn.Parameter(weight, requires_grad=False)
+        if ep and enable_eplb and expert_list is not None:
+            weight.expert_list = expert_list  # ✅ 添加这一行，仅在 EPLB 时才加
+            weight.layer_idx = layer_idx
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        print(f"[Rank {rank}] ✅ Load Expert {expert_list} for Layer {layer_idx} ({weight_type})")
         self.register_parameter('weight', weight)
         self.ep = ep
         self.expert_list = expert_list
@@ -73,7 +84,12 @@ class LinearWeights(nn.Module):
         self.half_out = out_features // 2
 
         if self.ep:
-            self.expert_map = dict((eid, idx) for idx, eid in enumerate(expert_list))
+            if enable_eplb:
+                self.expert_map = defaultdict(list)
+                for idx, eid in enumerate(expert_list):
+                    self.expert_map[eid].append(idx)
+            else:
+                self.expert_map = dict((eid, idx) for idx, eid in enumerate(expert_list))
             self.weight.weight_loader = self.weight_loader_ep
         else:
             self.weight.weight_loader = self.weight_loader_tp
@@ -105,21 +121,59 @@ class LinearWeights(nn.Module):
 
     def weight_loader_ep(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int, shard_id: str):
         """weight loader."""
+        world_size, rank = get_tp_world_rank()
         expert_list = self.expert_list
         if expert_id not in expert_list:
             return
 
         expert_map = self.expert_map
-        param_id = expert_map[expert_id]
-        if shard_id == 'gate':
-            param_data = param.data[param_id, :self.half_out]
-        elif shard_id == 'up':
-            param_data = param.data[param_id, self.half_out:]
-        elif shard_id == 'down':
-            param_data = param.data[param_id]
+
+        if not enable_eplb:
+            param_id = expert_map[expert_id]
+            if shard_id == 'gate':
+                param_data = param.data[param_id, :self.half_out]
+            elif shard_id == 'up':
+                param_data = param.data[param_id, self.half_out:]
+            elif shard_id == 'down':
+                param_data = param.data[param_id]
+            else:
+                raise RuntimeError(f'Unknown shard_id: {shard_id}')
+            param_data.copy_(loaded_weight)
         else:
-            raise RuntimeError(f'Unknown shard_id: {shard_id}')
-        param_data.copy_(loaded_weight)
+            param_ids = expert_map[expert_id]
+            for param_id in param_ids:
+                if param.data.dtype == torch.float8_e4m3fn:
+                    # 临时转为 float16 做索引
+                    temp_param = param.data.to(torch.float16)
+                    
+                    if shard_id == 'gate':
+                        param_data = temp_param[param_id, :self.half_out]
+                    elif shard_id == 'up':
+                        param_data = temp_param[param_id, self.half_out:]
+                    elif shard_id == 'down':
+                        param_data = temp_param[param_id]
+                    else:
+                        raise RuntimeError(f'Unknown shard_id: {shard_id}')
+                    
+                    # 将 loaded_weight 也转成 float16
+                    weight_to_copy = loaded_weight.to(torch.float16)
+                    param_data.copy_(weight_to_copy)
+
+                    # 再写回原始 param.data（转换回 float8）
+                    param.data.copy_(temp_param.to(torch.float8_e4m3fn))
+                else:
+                    if shard_id == 'gate':
+                        param_data = param.data[param_id, :self.half_out]
+                    elif shard_id == 'up':
+                        param_data = param.data[param_id, self.half_out:]
+                    elif shard_id == 'down':
+                        param_data = param.data[param_id]
+                    else:
+                        raise RuntimeError(f'Unknown shard_id: {shard_id}')
+                    param_data.copy_(loaded_weight.to(param_data.dtype))
+             # 打印日志：记录每个 rank 每层加载的专家 ID、参数名称和权重形状
+            param_name = f"Layer_{self.layer_idx}_{shard_id}_Expert_{expert_id}"
+            print(f"[Rank {rank}] ✅ Loaded Expert {expert_id} for {param_name} shape={param_data.shape}")
 
 
 def _gather_input(x: torch.Tensor, tp_sizes: List[int]):
@@ -409,7 +463,8 @@ class LinearWeightsBlockedF8(LinearWeights):
                  dtype: torch.dtype,
                  device: torch.device,
                  expert_list: List[int] = None,
-                 ep: bool = False):
+                 ep: bool = False,
+                 layer_idx: int = 0):
         super().__init__(
             num_experts=num_experts,
             in_features=in_features,
@@ -419,6 +474,7 @@ class LinearWeightsBlockedF8(LinearWeights):
             device=device,
             expert_list=expert_list,
             ep=ep,
+            layer_idx=layer_idx,
         )
         self.block_size = block_size
         scale = torch.empty((num_experts, div_up(out_features, block_size), div_up(in_features, block_size)),
@@ -428,7 +484,12 @@ class LinearWeightsBlockedF8(LinearWeights):
         self.register_parameter('scale', scale)
 
         if self.ep:
-            self.expert_map = dict((eid, idx) for idx, eid in enumerate(expert_list))
+            if enable_eplb:
+                self.expert_map = defaultdict(list)
+                for idx, eid in enumerate(expert_list):
+                    self.expert_map[eid].append(idx)
+            else:
+                self.expert_map = dict((eid, idx) for idx, eid in enumerate(expert_list))
             self.scale.weight_loader = self.weight_loader_scale_ep
         else:
             self.scale.weight_loader = self.weight_loader_scale_tp
@@ -446,8 +507,13 @@ class LinearWeightsBlockedF8(LinearWeights):
         expert_list = self.expert_list
         if expert_id not in expert_list:
             return
-        expert_id = self.expert_map[expert_id]
-        self.weight_loader_scale_tp(param, loaded_weight, expert_id, shard_id)
+        if not enable_eplb:
+            expert_id = self.expert_map[expert_id]
+            self.weight_loader_scale_tp(param, loaded_weight, expert_id, shard_id)
+        else:
+            expert_ids = self.expert_map[expert_id]
+            for expert_id in expert_ids:
+                self.weight_loader_scale_tp(param, loaded_weight, expert_id, shard_id)
 
     def weight_loader_scale_tp(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int,
                                shard_id: str):
@@ -504,6 +570,8 @@ class FusedMoEBlockedF8(nn.Module):
                                        layer_idx=layer_idx)
 
         if self.ep_size > 1:
+            if rank == 0:
+                print("================================geting expert list==========================")
             expert_list = self.impl.ep_expert_list(self.ep_size, rank)
             num_experts = len(expert_list)
         else:
@@ -519,7 +587,8 @@ class FusedMoEBlockedF8(nn.Module):
                                               dtype=fp8_dtype,
                                               device=device,
                                               expert_list=expert_list,
-                                              ep=self.ep_size > 1)
+                                              ep=self.ep_size > 1,
+                                              layer_idx=layer_idx)
         self.down = LinearWeightsBlockedF8(
             num_experts,
             ffn_dim,
@@ -530,7 +599,7 @@ class FusedMoEBlockedF8(nn.Module):
             device=device,
             expert_list=expert_list,
             ep=self.ep_size > 1,
-        )
+            layer_idx=layer_idx)
 
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim

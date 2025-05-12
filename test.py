@@ -35,8 +35,8 @@ def main(rank: int):
 
     backend_config = PytorchEngineConfig(
         tp=1,
-        dp=4,
-        ep=4,
+        dp=8,
+        ep=8,
         dp_rank=rank,
         eager_mode=True,
     )

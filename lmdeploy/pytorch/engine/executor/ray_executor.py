@@ -149,6 +149,15 @@ def get_ascend_device_rank_mapping(master_addr: str, workers: list, dp: int):
 
     envs = {
         'ASCEND_RANK_TABLE_FILE_PATH': rank_table_file,
+        'ASDOPS_LOG_LEVEL': 'INFO',
+        'ASDOPS_LOG_TO_STDOUT': '1',
+        'ATB_LOG_TO_STDOUT': '1',
+        'ATB_LOG_LEVEL': 'INFO',
+        'DICP_LOG_LEVEL': 'INFO',
+        'ASCEND_GLOBAL_LOG_LEVEL': '0',
+        # 'TORCH_LOGS': "+dynamo",
+        # 'TORCHDYNAMO_VERBOSE': '1',
+        'DICP_USE_TORCH_NPU_LAUNCHER': '0',
     }
     return rank_mapping, worker_ips, envs
 

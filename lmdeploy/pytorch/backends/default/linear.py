@@ -9,6 +9,17 @@ import lmdeploy.pytorch.distributed as dist
 from ..linear import LinearBuilder, LinearImpl
 
 
+def _gather_input(x: torch.Tensor, tp_sizes: List[int]):
+    """gather input."""
+    shape0 = x.shape[:-2]
+    shape1 = x.shape[-1:]
+    shapes = [shape0 + (size, ) + shape1 for size in tp_sizes]
+    new_x = [x.new_empty(shape) for shape in shapes]
+    dist.all_gather(new_x, x)
+    x = torch.cat(new_x, dim=-2)
+    return x
+
+
 def _reduce_scatter_input(out: torch.Tensor, rank: int, tp_sizes: List[int]):
     """reduce scatter."""
     out = out.transpose(0, -2)
@@ -29,14 +40,17 @@ class DefaultLinearImpl(LinearImpl):
                 x,
                 weight: torch.Tensor,
                 bias: Optional[torch.Tensor] = None,
+                dp_gather: bool = False,
                 all_reduce: bool = False,
-                rank: int = 0,
-                scatter_size: List[int] = None):
+                tp_size: List[int] = None):
         """forward."""
+        if dp_gather:
+            _gather_input(x, tp_size)
+        _, rank = dist.get_tp_world_rank()
         out = F.linear(x, weight, bias)
         if all_reduce:
-            if scatter_size is not None:
-                out = _reduce_scatter_input(out, rank, scatter_size)
+            if tp_size is not None:
+                out = _reduce_scatter_input(out, rank, tp_size)
             else:
                 dist.all_reduce(out)
         return out

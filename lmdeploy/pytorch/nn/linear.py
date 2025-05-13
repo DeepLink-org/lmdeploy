@@ -332,19 +332,19 @@ class BlockedF8Linear(nn.Module):
             dp_meta = step_ctx.dp_meta
             tp_sizes = dp_meta.tp_sizes
 
-        if self.dp_gather:
-            x = _gather_input(x, tp_sizes)
+        # if self.dp_gather:
+        #     x = _gather_input(x, tp_sizes)
 
         all_reduce = False if self.colwise else self.is_tp
         all_reduce = all_reduce and self.all_reduce
         if len(self.lora_adapters) == 0:
             if self.dp_scatter:
-                _, rank = get_tp_world_rank()
-                return self.impl.forward(x, self.weight, self.scale, self.bias, all_reduce, rank, tp_sizes)
+                return self.impl.forward(x, self.weight, self.scale, self.bias, self.dp_gather, all_reduce,
+                                         tp_sizes)
             else:
-                return self.impl.forward(x, self.weight, self.scale, self.bias, all_reduce)
+                return self.impl.forward(x, self.weight, self.scale, self.bias, self.dp_gather, all_reduce)
 
-        out = self.impl.forward(x, self.weight, self.scale, self.bias, False)
+        out = self.impl.forward(x, self.weight, self.scale, self.dp_gather, self.bias, False)
         for lora_adapter in self.lora_adapters.values():
             out = lora_adapter(x, out)
         if all_reduce:
@@ -1188,24 +1188,25 @@ class BaseLinear(nn.Module):
 
     def forward(self, x):
         """forward of linear layer."""
+        tp_sizes = None
         if self.dp_gather or self.dp_scatter:
             step_ctx = get_step_ctx_manager().current_context()
             dp_meta = step_ctx.dp_meta
             tp_sizes = dp_meta.tp_sizes
 
-        if self.dp_gather:
-            x = _gather_input(x, tp_sizes)
+        # if self.dp_gather:
+        #     x = _gather_input(x, tp_sizes)
 
         all_reduce = False if self.colwise else self.is_tp
         all_reduce = all_reduce and self.all_reduce
         if len(self.lora_adapters) == 0:
             if self.dp_scatter:
-                _, rank = get_tp_world_rank()
-                return self.impl.forward(x, self.weight, self.bias, all_reduce, rank, tp_sizes)
+                # _, rank = get_tp_world_rank()
+                return self.impl.forward(x, self.weight, self.bias, self.dp_gather, all_reduce, tp_sizes)
             else:
-                return self.impl.forward(x, self.weight, self.bias, all_reduce)
+                return self.impl.forward(x, self.weight, self.bias, self.dp_gather, all_reduce, tp_sizes)
 
-        out = self.impl.forward(x, self.weight, self.bias, False)
+        out = self.impl.forward(x, self.weight, self.bias, self.dp_gather, False, tp_sizes)
         for lora_adapter in self.lora_adapters.values():
             out = lora_adapter(x, out)
         if all_reduce:

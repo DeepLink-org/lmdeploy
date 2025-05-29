@@ -581,7 +581,7 @@ class RayExecutor(ExecutorBase):
                 ray.get([worker.set_device.remote(rank_mapping[idx]) for idx, worker in enumerate(self.workers)])
             else:
                 assert 'RANK' in os.environ
-                ray.get([self.workers[0].set_device.remote(int(os.environ['RANK']))])
+                ray.get([self.workers[0].set_device.remote(rank_mapping[int(os.environ['RANK'])])])
             ray.get([worker.set_env.remote(envs) for worker in self.workers])
         else:
             raise ValueError(f'Unsupported device type: {device_str}')

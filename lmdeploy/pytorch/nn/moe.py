@@ -163,6 +163,8 @@ def _moe_gather_inputs(hidden_states, topk_weights, topk_ids, enable_ep):
         topk_weights = _gather_input(topk_weights, tp_sizes)
         topk_ids = _gather_input(topk_ids, tp_sizes)
     else:
+        if hidden_states.device.type in ['npu']:
+            return hidden_states, topk_weights, topk_ids
         raise RuntimeError('Not supported.')
     return hidden_states, topk_weights, topk_ids
 
@@ -210,6 +212,7 @@ class FusedMoE(nn.Module):
         enable_ep = enable_ep and self.impl.support_ep()
         if enable_ep:
             world_size, rank = get_tp_world_rank()
+            world_size, rank = get_ep_world_rank()
             expert_list = self.impl.ep_expert_list(world_size, rank)
             num_experts = len(expert_list)
         else:
@@ -733,7 +736,7 @@ def build_fused_moe(
     dtype: Optional[torch.dtype] = None,
     device: Optional[torch.device] = None,
     all_reduce: bool = True,
-    enable_ep: bool = False,
+    enable_ep: bool = True,
     quant_config: Any = None,
     layer_idx: int = 0,
 ):

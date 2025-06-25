@@ -205,7 +205,7 @@ class FusedMoE(nn.Module):
             dtype = torch.float16
 
         impl_builder = get_backend().get_layer_impl_builder(OpType.FusedMoE)
-        self.impl = impl_builder.build(top_k, num_experts, renormalize)
+        self.impl = impl_builder.build(top_k, num_experts, renormalize, hidden_dim, dtype, enable_ep)
 
         enable_ep = enable_ep and self.impl.support_ep()
         if enable_ep:
@@ -254,12 +254,14 @@ class FusedMoE(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, topk_weights: torch.Tensor, topk_ids: torch.LongTensor):
         hidden_states, topk_weights, topk_ids = _moe_gather_inputs(hidden_states, topk_weights, topk_ids,
-                                                                   self.enable_ep)
+                                                                   False)
+        # hidden_states = hidden_states.view(-1, self.hidden_dim)
+        hidden_states = hidden_states.squeeze(0)
 
         ret = self.impl.forward(hidden_states, topk_weights, topk_ids, self.gate_up.weight, self.down.weight,
                                 self.expert_list)
         if self.all_reduce:
-            ret = _moe_reduce(ret, self.enable_ep)
+            ret = _moe_reduce(ret, False)
         return ret
 
 
@@ -733,7 +735,7 @@ def build_fused_moe(
     dtype: Optional[torch.dtype] = None,
     device: Optional[torch.device] = None,
     all_reduce: bool = True,
-    enable_ep: bool = False,
+    enable_ep: bool = True,
     quant_config: Any = None,
     layer_idx: int = 0,
 ):

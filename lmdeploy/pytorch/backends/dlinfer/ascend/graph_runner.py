@@ -36,23 +36,23 @@ class AscendGraphRunner(GraphRunner):
             self.patch_kvcache_static_shape()
             if hasattr(self.model, 'language_model'):
                 self.model.language_model = torch.compile(self.model.language_model,
-                                                          fullgraph=True,
+                                                          fullgraph=False,
                                                           dynamic=True,
                                                           backend='atbgraph')
             elif (isinstance(self.model, Qwen2VLForConditionalGeneration)
                   or isinstance(self.model, Qwen2_5_VLForConditionalGeneration)):
-                self.model.model = torch.compile(self.model.model, fullgraph=True, dynamic=True, backend='atbgraph')
+                self.model.model = torch.compile(self.model.model, fullgraph=False, dynamic=True, backend='atbgraph')
             elif isinstance(self.model, ChatGLMForConditionalGeneration):
                 self.model.transformer.encoder = torch.compile(self.model.transformer.encoder,
-                                                               fullgraph=True,
+                                                               fullgraph=False,
                                                                dynamic=True,
                                                                backend='atbgraph')
             else:
-                self.model = torch.compile(self.model, fullgraph=True, dynamic=True, backend='atbgraph')
+                self.model = torch.compile(self.model, fullgraph=False, dynamic=True, backend='atbgraph')
             if SocVersion.is_Ascend310P() and hasattr(self.model, 'get_logits'):
                 # Compile get_logits for Ascend310P to use ATB linear since we would convert weight to nz format
                 self.model.get_logits = torch.compile(self.model.get_logits,
-                                                      fullgraph=True,
+                                                      fullgraph=False,
                                                       dynamic=True,
                                                       backend='atbgraph')
 

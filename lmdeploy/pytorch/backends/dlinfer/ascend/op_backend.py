@@ -11,6 +11,7 @@ import torch
 from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
 from lmdeploy.utils import get_logger
 
+from ...base import OpType
 from ..op_backend import DlinferOpsBackend
 
 logger = get_logger('lmdeploy')
@@ -98,6 +99,14 @@ class AscendOpsBackend(DlinferOpsBackend):
     def get_name() -> str:
         """backend name."""
         return 'ascend'
+
+    @classmethod
+    def get_layer_impl_builder(cls, layer_type: OpType):
+        """get dlinfer layer builder."""
+        if layer_type == OpType.FusedMoE:
+            from .moe import AscendFusedMoEBuilder
+            return AscendFusedMoEBuilder
+        return DlinferOpsBackend.get_layer_impl_builder(layer_type)
 
     @staticmethod
     def get_k_block_shape(

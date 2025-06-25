@@ -182,6 +182,7 @@ def get_ascend_device_rank_mapping(master_addr: str, workers: list, dp: int):
 
     envs = {
         'ASCEND_RANK_TABLE_FILE_PATH': rank_table_file,
+        'DICP_USE_TORCH_NPU_LAUNCHER': '0',
     }
     return rank_mapping, worker_ips, envs
 

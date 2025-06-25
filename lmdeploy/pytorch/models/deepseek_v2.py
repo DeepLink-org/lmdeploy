@@ -614,6 +614,7 @@ class MoEGate(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor):
         """forward."""
+        hidden_states = hidden_states.squeeze(0)
         sequence_length, hidden_dim = hidden_states.shape
         router_logits = F.linear(hidden_states, self.weight)
         if self.fake_eplb:
@@ -663,6 +664,7 @@ class MoEGate(nn.Module):
 
         if not self.renormalize or self.topk_method == 'noaux_tc':
             topk_weight = topk_weight * self.routed_scaling_factor
+            topk_idx = topk_idx + 0
 
         return topk_weight, topk_idx
 
@@ -722,7 +724,7 @@ class DeepseekV2MoE(nn.Module):
     def forward(self, hidden_states: torch.Tensor):
         """forward."""
         batch_size, sequence_length, hidden_dim = hidden_states.shape
-        hidden_states = hidden_states.view(-1, hidden_dim)
+        # hidden_states = hidden_states.view(-1, hidden_dim)
         topk_weights, topk_ids = self.gate(hidden_states)
         out_states = self.experts(
             hidden_states,

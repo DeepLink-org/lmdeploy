@@ -77,7 +77,7 @@ class TritonFusedMoEBuilder(FusedMoEBuilder):
     """Triton fused moe builder."""
 
     @staticmethod
-    def build(top_k: int, num_experts: int, renormalize: bool = False):
+    def build(top_k: int, num_experts: int, renormalize: bool = False, ep_size: int = 1):
         """Build from mlp."""
         return TritonFusedMoEImpl(top_k=top_k, num_experts=num_experts, renormalize=renormalize)
 

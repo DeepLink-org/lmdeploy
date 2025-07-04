@@ -208,14 +208,13 @@ class FusedMoE(nn.Module):
             device = torch.device('cpu')
         if dtype is None:
             dtype = torch.float16
-
+        ep_size, rank = get_ep_world_rank()
         impl_builder = get_backend().get_layer_impl_builder(OpType.FusedMoE)
-        self.impl = impl_builder.build(top_k, num_experts, renormalize)
+        self.impl = impl_builder.build(top_k, num_experts, renormalize, ep_size)
 
-        enable_ep = enable_ep and self.impl.support_ep()
+        enable_ep = self.impl.support_ep() and ep_size != 1
         if enable_ep:
-            world_size, rank = get_tp_world_rank()
-            expert_list = self.impl.ep_expert_list(world_size, rank)
+            expert_list = self.impl.ep_expert_list(ep_size, rank)
             num_experts = len(expert_list)
         else:
             hidden_dim, ffn_dim = _update_args(hidden_dim, ffn_dim)
@@ -258,13 +257,12 @@ class FusedMoE(nn.Module):
         self.down.update_weight(down_weights)
 
     def forward(self, hidden_states: torch.Tensor, topk_weights: torch.Tensor, topk_ids: torch.LongTensor):
-        hidden_states, topk_weights, topk_ids = _moe_gather_inputs(hidden_states, topk_weights, topk_ids,
-                                                                   self.enable_ep)
+        hidden_states, topk_weights, topk_ids = _moe_gather_inputs(hidden_states, topk_weights, topk_ids, False)
 
         ret = self.impl.forward(hidden_states, topk_weights, topk_ids, self.gate_up.weight, self.down.weight,
                                 self.expert_list)
         if self.all_reduce:
-            ret = _moe_reduce(ret, self.enable_ep)
+            ret = _moe_reduce(ret, False)
         return ret
 
 

@@ -163,7 +163,7 @@ def _get_master_port():
     return find_available_port()
 
 
-def get_ascend_device_rank_mapping(master_addr):
+def get_ascend_device_rank_mapping(master_addr: str, workers: list, dp: int):
     rank_table_file = _envs.ascend_rank_table_file
     if not rank_table_file:
         raise ValueError('ASCEND_RANK_TABLE_FILE_PATH is not set')
@@ -184,6 +184,8 @@ def get_ascend_device_rank_mapping(master_addr):
         logger.error(f'Parse rank table file({rank_table})  failed')
         raise e
 
+    if dp > 1:
+        worker_ips = ray.get([worker.get_node_ip.remote() for worker in workers])
     envs = {
         'ASCEND_RANK_TABLE_FILE_PATH': rank_table_file,
     }
@@ -635,9 +637,13 @@ class RayExecutor(ExecutorBase):
             ray.get([worker.set_device.remote(idx) for idx, worker in enumerate(self.workers)])
         else:
             # if rank table file is set, use it to get rank mapping, multiple nodes
-            rank_mapping, worker_ips, envs = get_ascend_device_rank_mapping(driver_ip)
+            rank_mapping, worker_ips, envs = get_ascend_device_rank_mapping(driver_ip, self.workers, self.dp)
             self.workers = self._sort_workers_by_ip(worker_ips, self.workers)
-            ray.get([worker.set_device.remote(rank_mapping[idx]) for idx, worker in enumerate(self.workers)])
+            if self.dp == 1:
+                ray.get([worker.set_device.remote(rank_mapping[idx]) for idx, worker in enumerate(self.workers)])
+            else:
+                os.environ['ASCEND_RT_VISIBLE_DEVICES'] = os.environ['CUDA_VISIBLE_DEVICES']
+                ray.get([self.workers[0].set_device.remote(int(os.environ['ASCEND_RT_VISIBLE_DEVICES']))])
             ray.get([worker.set_env.remote(envs) for worker in self.workers])
 
     """ PD Disaggregation API Begin """

@@ -33,9 +33,11 @@ class DlinferSoftmaxTopKBuilder(SoftmaxTopKBuilder):
 class DlinferFusedMoEImpl(FusedMoEImpl):
     """Dlinfer fused moe implementation."""
 
-    def __init__(self, top_k: int, renormalize: bool = False):
+    def __init__(self, top_k: int, num_experts: int, renormalize: bool = False, ep_size: int = 1):
         self.top_k = top_k
+        self.num_experts = num_experts
         self.renormalize = renormalize
+        self.ep_size = ep_size
 
     def update_weights(self, gate_up_weights: torch.Tensor, down_weights: torch.Tensor):
         """Update weights."""
@@ -43,6 +45,17 @@ class DlinferFusedMoEImpl(FusedMoEImpl):
         if device_type in ['npu']:
             return gate_up_weights.transpose(-1, -2).contiguous(), down_weights.transpose(-1, -2).contiguous()
         return gate_up_weights, down_weights
+
+    def support_ep(self):
+        """Support expert parallelism."""
+        return True
+
+    def ep_expert_list(self, world_size: int, rank: int):
+        """Experts list of current rank."""
+        expert_per_rank = (self.num_experts + world_size - 1) // world_size
+        first_expert = rank * expert_per_rank
+        last_expert = min(first_expert + expert_per_rank, self.num_experts)
+        return list(range(first_expert, last_expert))
 
     def forward(self,
                 hidden_states: torch.Tensor,
@@ -53,13 +66,13 @@ class DlinferFusedMoEImpl(FusedMoEImpl):
                 expert_list: List[int] = None):
         """forward."""
         return fused_moe(hidden_states, gate_up_weights, down_weights, topk_weights, topk_ids, self.top_k,
-                         self.renormalize)
+                         self.num_experts, self.ep_size, self.renormalize)
 
 
 class DlinferFusedMoEBuilder(FusedMoEBuilder):
     """Dlinfer fused moe builder."""
 
     @staticmethod
-    def build(top_k: int, num_experts: int, renormalize: bool = False):
+    def build(top_k: int, num_experts: int, renormalize: bool = False, ep_size: int = 1):
         """Build from mlp."""
-        return DlinferFusedMoEImpl(top_k=top_k, renormalize=renormalize)
+        return DlinferFusedMoEImpl(top_k=top_k, num_experts=num_experts, renormalize=renormalize, ep_size=ep_size)

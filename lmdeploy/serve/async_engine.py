@@ -567,6 +567,7 @@ class AsyncEngine(LogitsMixin):
                 chat_template = MODELS.module_dict[adapter_name]()
         else:
             chat_template = BaseChatTemplate()
+        chat_template = BaseChatTemplate()
         prompt = chat_template.messages2prompt(prompt, sequence_start, tools=tools, enable_thinking=enable_thinking)
         if prompt is None:
             raise ValueError(

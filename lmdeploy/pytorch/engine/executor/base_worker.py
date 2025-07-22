@@ -58,7 +58,9 @@ class WorkerWrapperBase:
             if master_addr is not None and master_port is not None:
                 setup_master_addr(master_addr, master_port)
 
+            logger.info(f"int before rank: {rank}, self.work_size: {self.world_size}")
             init_process_group(rank, self.world_size)
+            logger.info(f"intialized rank: {rank}, self.work_size: {self.world_size}")
 
         ccl_backend = get_backend(self.device_type).ccl_backend()
         self.dist_ctx = DistContext.build(self.rank, self.dist_config, ccl_backend)

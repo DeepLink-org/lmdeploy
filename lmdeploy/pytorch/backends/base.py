@@ -31,6 +31,10 @@ class OpType(Enum):
     FusedMoEW8A8 = auto()
     LinearBlockedF8 = auto()
     FusedMoEBlockedF8 = auto()
+    RMSNormAscendW8A8 = auto()
+    LinearAscendW8A8 = auto()
+    LinearAscendW8A8Dynamic = auto()
+    FusedMoEAscendW8A8 = auto()
 
 
 class OpsBackend(ABC):

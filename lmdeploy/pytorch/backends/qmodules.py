@@ -64,3 +64,116 @@ class LinearW8A8Builder(ABC):
               quant_dtype: torch.dtype = torch.int8):
         """build."""
         raise NotImplementedError
+
+
+class RMSNormAscendW8A8Impl(ABC):
+    """RMS norm ascend w8a8 implementation api."""
+
+    @staticmethod
+    def create_weight(hidden_size: int, dtype: torch.dtype = None, device: torch.device = None):
+        """Create weight."""
+        if dtype is None:
+            dtype = torch.float16
+        if device is None:
+            device = 'cuda'
+        weight = torch.nn.Parameter(torch.ones(hidden_size, dtype=dtype, device=device), requires_grad=False)
+        return weight
+
+    @abstractmethod
+    def forward(self,
+                x: torch.Tensor,
+                weight: torch.Tensor,
+                bias: torch.Tensor,
+                residual: torch.Tensor = None,
+                input_scale: torch.Tensor = None,
+                input_offset: torch.Tensor = None):
+        """forward."""
+        raise NotImplementedError
+
+
+class RMSNormAscendW8A8Builder(ABC):
+    """RMS norm ascend w8a8 implementation builder."""
+
+    @staticmethod
+    @abstractmethod
+    def build(hidden_size: int, eps: float = 1e-6, quant_dtype: torch.dtype = torch.int8):
+        """build."""
+        raise NotImplementedError
+
+
+class LinearAscendW8A8Impl(ABC):
+    """Linear ascend w8a8 implementation api."""
+
+    def update_weights(self,
+                       weight: torch.Tensor,
+                       input_scale: torch.Tensor,
+                       input_offset: torch.Tensor,
+                       quant_bias: torch.Tensor,
+                       deq_scale: torch.Tensor,
+                       bias: Optional[torch.Tensor] = None):
+        """Update weights."""
+        return weight, input_scale, input_offset, quant_bias, deq_scale, bias
+
+    @abstractmethod
+    def forward(self,
+                x,
+                weight: torch.Tensor,
+                input_scale: torch.Tensor,
+                input_offset: torch.Tensor,
+                quant_bias: torch.Tensor,
+                deq_scale: torch.Tensor,
+                bias: Optional[torch.Tensor] = None,
+                all_reduce: bool = False):
+        """forward."""
+        raise NotImplementedError
+
+
+class LinearAscendW8A8Builder(ABC):
+    """Linear ascend w8a8 implementation builder."""
+
+    @staticmethod
+    @abstractmethod
+    def build(in_features: int,
+              out_features: int,
+              bias: bool = True,
+              dtype: torch.dtype = None,
+              quant_dtype: torch.dtype = torch.int8):
+        """build."""
+        raise NotImplementedError
+
+
+class LinearAscendW8A8DynamicImpl(ABC):
+    """Linear ascend w8a8 implementation api."""
+
+    def update_weights(self,
+                       weight: torch.Tensor,
+                       weight_scale: torch.Tensor,
+                       weight_offset: torch.Tensor,
+                       bias: Optional[torch.Tensor] = None):
+        """Update weights."""
+        return weight, weight_scale, weight_offset, bias
+
+    @abstractmethod
+    def forward(self,
+                x,
+                weight: torch.Tensor,
+                weight_scale: torch.Tensor,
+                weight_offset: torch.Tensor,
+                bias: Optional[torch.Tensor] = None,
+                all_reduce: bool = False):
+        """forward."""
+        raise NotImplementedError
+
+
+class LinearAscendW8A8DynamicBuilder(ABC):
+    """Linear ascend w8a8 implementation builder."""
+
+    @staticmethod
+    @abstractmethod
+    def build(in_features: int,
+              out_features: int,
+              bias: bool = True,
+              dtype: torch.dtype = None,
+              quant_dtype: torch.dtype = torch.int8):
+        """build."""
+        raise NotImplementedError

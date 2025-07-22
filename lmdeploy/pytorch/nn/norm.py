@@ -23,6 +23,21 @@ def _is_w8a8(quant_config: Any):
     return w8a8_flag, quant_dtype
 
 
+def is_ascend_w8a8(quant_config: Any):
+    """Is ascend w8a8."""
+    quant_dtype = None
+    ascend_w8a8_flag = False
+    if quant_config is not None:
+        quant_method = quant_config['quant_method']
+        if quant_method == 'dlinfer_ascend_w8a8':
+            quant_dtype = quant_config.get('quant_dtype', None)
+            if quant_dtype is not None:
+                quant_dtype = eval(f'torch.{quant_dtype}')
+                if quant_dtype == torch.int8:
+                    ascend_w8a8_flag = True
+    return ascend_w8a8_flag, quant_dtype
+
+
 class RMSNorm(nn.Module):
     """RMS Norm with add residual."""
 
@@ -38,8 +53,12 @@ class RMSNorm(nn.Module):
         backend = get_backend()
 
         w8a8_flag, quant_dtype = _is_w8a8(quant_config)
+        ascend_w8a8_flag, quant_dtype = is_ascend_w8a8(quant_config)
+        self.ascend_w8a8_flag = ascend_w8a8_flag
         if w8a8_flag:
             builder = backend.get_layer_impl_builder(OpType.RMSNormW8A8)
+        elif ascend_w8a8_flag:
+            builder = backend.get_layer_impl_builder(OpType.RMSNormAscendW8A8)
         else:
             builder = backend.get_layer_impl_builder(OpType.RMSNorm)
 
@@ -47,18 +66,31 @@ class RMSNorm(nn.Module):
             world_size, rank = get_tp_world_rank()
             hidden_size = get_distribute_size(hidden_size, world_size, rank, align=align)
 
+        self.device = device
         self.register_parameter('weight', self.create_weight(hidden_size, dtype, device))
         if w8a8_flag:
+            self.impl = builder.build(hidden_size, eps, quant_dtype=quant_dtype)
+        elif ascend_w8a8_flag:
+            self.register_parameter('bias', self.create_weight(hidden_size, torch.float32, device))
             self.impl = builder.build(hidden_size, eps, quant_dtype=quant_dtype)
         else:
             self.impl = builder.build(hidden_size, eps)
 
         if tp:
             self.weight.weight_loader = self.weight_loader
+            self.bias.weight_loader = self.bias_loader
         self.align = align
 
     def weight_loader(self, param: nn.Parameter, loaded_weight: torch.Tensor):
         """Weight loader."""
+        param.data = param.data.to(self.device)
+        world_size, rank = get_tp_world_rank()
+        loaded_weight = chunk_aligned(loaded_weight, world_size, 0, self.align)[rank]
+        param.copy_(loaded_weight)
+
+    def bias_loader(self, param: nn.Parameter, loaded_weight: torch.Tensor):
+        """Bias loader."""
+        param.data = param.data.to(self.device)
         world_size, rank = get_tp_world_rank()
         loaded_weight = chunk_aligned(loaded_weight, world_size, 0, self.align)[rank]
         param.copy_(loaded_weight)
@@ -66,6 +98,7 @@ class RMSNorm(nn.Module):
     @staticmethod
     def create_weight(hidden_size: int, dtype: torch.dtype = None, device: torch.device = None):
         """Create weight."""
+        # device = torch.device('cpu')
         if dtype is None:
             dtype = torch.float16
         if device is None:
@@ -73,9 +106,16 @@ class RMSNorm(nn.Module):
         weight = torch.nn.Parameter(torch.ones(hidden_size, dtype=dtype, device=device), requires_grad=False)
         return weight
 
-    def forward(self, x: torch.Tensor, residual: torch.Tensor = None):
+    def forward(self,
+                x: torch.Tensor,
+                residual: torch.Tensor = None,
+                input_scale: torch.Tensor = None,
+                input_offset: torch.Tensor = None):
         """forward."""
-        return self.impl.forward(x, self.weight, residual)
+        if self.ascend_w8a8_flag:
+            return self.impl.forward(x, self.weight, self.bias, residual, input_scale, input_offset)
+        else:
+            return self.impl.forward(x, self.weight, residual)
 
 
 class LayerNorm(nn.Module):

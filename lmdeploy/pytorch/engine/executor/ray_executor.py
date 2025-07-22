@@ -188,6 +188,7 @@ def get_ascend_device_rank_mapping(master_addr: str, workers: list, dp: int):
         worker_ips = ray.get([worker.get_node_ip.remote() for worker in workers])
     envs = {
         'ASCEND_RANK_TABLE_FILE_PATH': rank_table_file,
+        'DICP_USE_TORCH_NPU_LAUNCHER': '0',
     }
     return rank_mapping, worker_ips, envs
 
@@ -385,6 +386,7 @@ class RayExecutor(ExecutorBase):
                     for rank, worker in enumerate(self.workers)
                 ])
             else:
+                logger.info(f"############################################# self.workers: {self.workers}")
                 ray.get(self.workers[0].init_process_group.remote(self.dp_rank, self.master_addr, self.master_port))
 
             if self.dist_config.world_size > 1:
@@ -642,6 +644,10 @@ class RayExecutor(ExecutorBase):
             if self.dp == 1:
                 ray.get([worker.set_device.remote(rank_mapping[idx]) for idx, worker in enumerate(self.workers)])
             else:
+                logger.info(f"################## os.environ['CUDA_VISIBLE_DEVICES']: {os.environ['CUDA_VISIBLE_DEVICES']}")
+                logger.info(f"################## self.workers: {self.workers}")
+                if "RANK" in os.environ:
+                    logger.info(f"os.environ['RANK']: {os.environ['RANK']}")
                 os.environ['ASCEND_RT_VISIBLE_DEVICES'] = os.environ['CUDA_VISIBLE_DEVICES']
                 ray.get([self.workers[0].set_device.remote(int(os.environ['ASCEND_RT_VISIBLE_DEVICES']))])
             ray.get([worker.set_env.remote(envs) for worker in self.workers])

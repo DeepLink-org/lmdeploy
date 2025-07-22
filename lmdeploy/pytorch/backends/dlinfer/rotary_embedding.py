@@ -19,6 +19,7 @@ def _rotary_embedding_fwd(position_ids: torch.Tensor,
     if dtype is None:
         dtype = torch.float16
 
+    position_ids = torch.arange(163840).unsqueeze(0).cuda()
     if scaling_factor != 1.0:
         position_ids = position_ids.float() / scaling_factor
     else:
@@ -26,7 +27,7 @@ def _rotary_embedding_fwd(position_ids: torch.Tensor,
 
     position_ids = position_ids.unsqueeze(-1)
     angles = position_ids * inv_freq.view(1, 1, -1)
-    angles = torch.cat((angles, angles), dim=-1)
+    # angles = torch.cat((angles, angles), dim=-1)
 
     sin = angles.sin()
     cos = angles.cos()

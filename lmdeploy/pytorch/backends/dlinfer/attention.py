@@ -99,21 +99,22 @@ class DlinferAttentionImpl(AttentionImpl[DlinferAttentionMetadata]):
             kv_zeros = None
 
         # fill kv cache
-        k_cache, v_cache = self.fill_kv_cache(key,
-                                              value,
-                                              k_cache,
-                                              v_cache,
-                                              kv_start_indices,
-                                              k_scales_zeros=k_scales_zeros,
-                                              v_scales_zeros=v_scales_zeros,
-                                              quant_bits=quant_bits)
+        # k_cache, v_cache = self.fill_kv_cache(key,
+        #                                       value,
+        #                                       k_cache,
+        #                                       v_cache,
+        #                                       kv_start_indices,
+        #                                       k_scales_zeros=k_scales_zeros,
+        #                                       v_scales_zeros=v_scales_zeros,
+        #                                       quant_bits=quant_bits)
 
+        v_head_size = value.shape[-1]
         if inplace:
-            attn_output = query[..., :self.v_head_size]
+            attn_output = query[..., :v_head_size]
         else:
             q_shape = query.shape
-            o_shape = q_shape[:-1] + (self.v_head_size, )
-            attn_output = query.new_empty(o_shape)
+            o_shape = q_shape[:-1] + (v_head_size, )
+            attn_output = query.new_empty(o_shape).contiguous()
 
         attn_output = self.paged_attention_fwd(
             query,

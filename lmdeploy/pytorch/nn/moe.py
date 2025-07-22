@@ -324,6 +324,64 @@ class LinearWeightsW8A8(LinearWeights):
         param_data.copy_(weight)
 
 
+class LinearWeightsAscendW8A8(LinearWeights):
+    """Fused moe linear w8a8 weights."""
+
+    def __init__(self,
+                 num_experts: int,
+                 in_features: int,
+                 out_features: int,
+                 weight_type: str,
+                 device: torch.device,
+                 expert_list: List[int] = None,
+                 ep: bool = False,
+                 quant_dtype: torch.dtype = torch.int8):
+        super().__init__(
+            num_experts=num_experts,
+            in_features=in_features,
+            out_features=out_features,
+            weight_type=weight_type,
+            dtype=quant_dtype,
+            device=device,
+            expert_list=expert_list,
+            ep=ep,
+        )
+        scale = torch.empty((num_experts, out_features, 1), dtype=torch.bfloat16, device=device)
+        scale = torch.nn.Parameter(scale, requires_grad=False)
+        self.register_parameter('weight_scale', scale)
+
+        if self.ep:
+            self.weight_scale.weight_loader = self.weight_loader_ep
+        else:
+            self.weight_scale.weight_loader = self.weight_loader_scale_tp
+
+    def update_weight(self, weight: torch.Tensor, scale: torch.Tensor):
+        """Update weight."""
+        super().update_weight(weight=weight)
+        weight_loader = self.weight_scale.weight_loader
+        scale = torch.nn.Parameter(scale, requires_grad=False)
+        scale.weight_loader = weight_loader
+        self.register_parameter('weight_scale', scale)
+
+    def weight_loader_scale_tp(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int,
+                               shard_id: str):
+        """Weight loader scale tp."""
+        world_size, rank = get_tp_world_rank()
+        if shard_id == 'gate':
+            param_data = param.data[expert_id, :self.half_out]
+            weight = loaded_weight.chunk(world_size, dim=0)[rank]
+        elif shard_id == 'up':
+            param_data = param.data[expert_id, self.half_out:]
+            weight = loaded_weight.chunk(world_size, dim=0)[rank]
+        elif shard_id == 'down':
+            param_data = param.data[expert_id]
+            weight = loaded_weight
+        else:
+            raise RuntimeError(f'Unknown shard_id: {shard_id}')
+        weight = weight.to(param.dtype)
+        param_data.copy_(weight)
+
+
 class FusedMoEW8A8(nn.Module):
     """Fused moe w8a8."""
 
@@ -344,13 +402,13 @@ class FusedMoEW8A8(nn.Module):
             device = torch.device('cpu')
         dtype = torch.float16 if dtype is None else dtype
 
+        ep_size, rank = get_ep_world_rank()
         impl_builder = get_backend().get_layer_impl_builder(OpType.FusedMoEW8A8)
-        self.impl = impl_builder.build(top_k, num_experts, renormalize, dtype, quant_dtype=quant_dtype)
+        self.impl = impl_builder.build(top_k, num_experts, renormalize, dtype, quant_dtype=quant_dtype, ep_size=ep_size)
 
-        enable_ep = enable_ep and self.impl.support_ep()
+        enable_ep = self.impl.support_ep() and ep_size != 1
         if enable_ep:
-            world_size, rank = get_tp_world_rank()
-            expert_list = self.impl.ep_expert_list(world_size, rank)
+            expert_list = self.impl.ep_expert_list(ep_size, rank)
             num_experts = len(expert_list)
         else:
             hidden_dim, ffn_dim = _update_args(hidden_dim, ffn_dim)
@@ -395,6 +453,82 @@ class FusedMoEW8A8(nn.Module):
     def forward(self, hidden_states: torch.Tensor, topk_weights: torch.Tensor, topk_ids: torch.LongTensor):
         ret = self.impl.forward(hidden_states, topk_weights, topk_ids, self.gate_up.weight, self.gate_up.scale,
                                 self.down.weight, self.down.scale, self.expert_list)
+        if self.all_reduce:
+            dist.all_reduce(ret)
+        return ret
+
+
+class FusedMoEAscendW8A8(nn.Module):
+    """Fused moe w8a8."""
+
+    def __init__(self,
+                 hidden_dim: int,
+                 ffn_dim: int,
+                 num_experts: int,
+                 top_k: int,
+                 renormalize: bool = False,
+                 dtype: Optional[torch.dtype] = None,
+                 quant_dtype: Optional[torch.dtype] = torch.int8,
+                 device: Optional[torch.device] = None,
+                 all_reduce: bool = True,
+                 enable_ep: bool = False):
+        super().__init__()
+
+        if device is None:
+            device = torch.device('cpu')
+        dtype = torch.float16 if dtype is None else dtype
+
+        ep_size, rank = get_ep_world_rank()
+        impl_builder = get_backend().get_layer_impl_builder(OpType.FusedMoEAscendW8A8)
+        self.impl = impl_builder.build(top_k, num_experts, renormalize, dtype, quant_dtype=quant_dtype, ep_size=ep_size)
+
+        enable_ep = self.impl.support_ep() and ep_size != 1
+        if enable_ep:
+            expert_list = self.impl.ep_expert_list(ep_size, rank)
+            num_experts = len(expert_list)
+        else:
+            hidden_dim, ffn_dim = _update_args(hidden_dim, ffn_dim)
+            expert_list = None
+        self.expert_list = expert_list
+
+        self.gate_up = LinearWeightsAscendW8A8(num_experts,
+                                               hidden_dim,
+                                               ffn_dim * 2,
+                                               weight_type='gate_up',
+                                               device=device,
+                                               expert_list=expert_list,
+                                               ep=enable_ep,
+                                               quant_dtype=quant_dtype)
+        self.down = LinearWeightsAscendW8A8(num_experts,
+                                            ffn_dim,
+                                            hidden_dim,
+                                            weight_type='down',
+                                            device=device,
+                                            expert_list=expert_list,
+                                            ep=enable_ep,
+                                            quant_dtype=quant_dtype)
+
+        self.hidden_dim = hidden_dim
+        self.ffn_dim = ffn_dim
+        self.num_experts = num_experts
+        self.dtype = dtype
+        self.device = device
+        world_size, _ = get_tp_world_rank()
+        if world_size == 1:
+            all_reduce = False
+        self.all_reduce = all_reduce
+
+    def update_weights(self):
+        """Update weights."""
+        (gate_up_weights, down_weights, gate_up_scale,
+         down_scale) = self.impl.update_weights(self.gate_up.weight, self.down.weight, self.gate_up.weight_scale,
+                                                self.down.weight_scale)
+        self.gate_up.update_weight(gate_up_weights, gate_up_scale)
+        self.down.update_weight(down_weights, down_scale)
+
+    def forward(self, hidden_states: torch.Tensor, topk_weights: torch.Tensor, topk_ids: torch.LongTensor):
+        ret = self.impl.forward(hidden_states, topk_weights, topk_ids, self.gate_up.weight, self.gate_up.weight_scale,
+                                self.down.weight, self.down.weight_scale, self.expert_list)
         if self.all_reduce:
             dist.all_reduce(ret)
         return ret
@@ -803,6 +937,20 @@ def build_fused_moe(
             all_reduce=all_reduce,
             enable_ep=enable_ep,
             layer_idx=layer_idx,
+        )
+    elif quant_method == 'dlinfer_ascend_w8a8_dynamic':
+        quant_dtype = eval('torch.' + quant_config.get('quant_dtype', 'int8'))
+        return FusedMoEAscendW8A8(
+            hidden_dim=hidden_dim,
+            ffn_dim=ffn_dim,
+            num_experts=num_experts,
+            top_k=top_k,
+            renormalize=renormalize,
+            dtype=dtype,
+            quant_dtype=quant_dtype,
+            device=device,
+            all_reduce=all_reduce,
+            enable_ep=enable_ep,
         )
     else:
         raise RuntimeError(f'Unsupported quant method: {quant_method}')

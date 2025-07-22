@@ -15,6 +15,14 @@ from lmdeploy.utils import get_logger
 
 logger = get_logger('lmdeploy')
 
+# SAFE_WEIGHTS_NAME = "quant_model_weight_w8a8_dynamic.safetensors"
+# SAFE_WEIGHTS_INDEX_NAME = "quant_model_weight_w8a8_dynamic.index.json"
+
+SAFE_WEIGHTS_INDEX_NAME = 'quant_model_weight_w8a8_dynamic.safetensors.index.json'  # vllm deepseek r1 w8a8
+
+SAFE_WEIGHTS_NAME = 'quant_model_weight_w8a8.safetensors'
+# SAFE_WEIGHTS_INDEX_NAME = "quant_model_weight_w8a8.index.json"
+
 
 def load_weight(param: torch.nn.Parameter, loaded_weight: torch.Tensor, **kwargs):
     """Load weight."""

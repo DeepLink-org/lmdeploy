@@ -8,6 +8,7 @@ def _get_backend():
     device_ctx = device_mgr.current_context()
 
     device_type = device_ctx.device_type
+    device_type = "ascend"
 
     if device_type == 'cuda':
         from .cuda import CudaOpsBackend
@@ -25,8 +26,11 @@ def _get_backend():
         raise RuntimeError(f'Unsupported device type: {device_type}')
 
 
+from lmdeploy.utils import get_logger
+logger = get_logger("lmdeploy")
 def get_backend(backend_type: str = None):
     """Get device backend."""
+    logger.info(f"$$$$$$$$$$$$$$$$$$ backend_type: {backend_type}")
     if backend_type is None:
         return _get_backend()
     else:

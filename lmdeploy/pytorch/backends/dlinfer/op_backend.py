@@ -58,6 +58,18 @@ class DlinferOpsBackend(DefaultOpsBackend):
         elif layer_type == OpType.RotaryEmbedding:
             from .rotary_embedding import DlinferRotaryEmbeddingBuilder
             return DlinferRotaryEmbeddingBuilder
+        elif layer_type == OpType.RMSNormAscendW8A8:
+            from .qmodules import DlinferRMSNormAscendW8A8Builder
+            return DlinferRMSNormAscendW8A8Builder
+        elif layer_type == OpType.LinearAscendW8A8:
+            from .qmodules import DlinferLinearAscendW8A8Builder
+            return DlinferLinearAscendW8A8Builder
+        elif layer_type == OpType.LinearAscendW8A8Dynamic:
+            from .qmodules import DlinferLinearAscendW8A8DynamicBuilder
+            return DlinferLinearAscendW8A8DynamicBuilder
+        elif layer_type == OpType.FusedMoEAscendW8A8:
+            from .moe import DlinferFusedMoEAscendW8A8Builder
+            return DlinferFusedMoEAscendW8A8Builder
         else:
             logger.debug(f'Op {layer_type} fallback to default implementation.')
             return super().get_layer_impl_builder(layer_type)

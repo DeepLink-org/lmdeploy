@@ -1,0 +1,1 @@
+python3 profile_restful_api.py --backend lmdeploy --dataset-path /mnt/deeplink-test/datasets/ShareGPT_V3_unfiltered_cleaned_split.json --host 10.140.215.233 --port 1025 --num-prompts 2000 --request-rate 4

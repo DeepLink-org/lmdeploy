@@ -57,7 +57,7 @@ class FusedMoEBuilder(ABC):
 
     @staticmethod
     @abstractmethod
-    def build(top_k: int, num_experts: int, renormalize: bool = False):
+    def build(top_k: int, num_experts: int, renormalize: bool = False, ep_size: int = 1):
         """Build from mlp."""
         raise NotImplementedError
 

@@ -395,6 +395,10 @@ async def chat_completions_v1(raw_request: Request = None):
 
     random_seed = request.seed if request.seed else None
 
+    request.top_k = 50
+    request.top_p = 1.0
+    request.min_p = 0.0
+    request.temperature = 0.7
     gen_config = GenerationConfig(max_new_tokens=request.max_tokens,
                                   do_sample=True,
                                   logprobs=gen_logprobs,

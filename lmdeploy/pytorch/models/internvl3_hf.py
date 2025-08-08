@@ -23,7 +23,7 @@ from .utils.cudagraph import CudaGraphMixin
 from .utils.model import DeployModelMixin, vlm_model
 
 
-@torch.compile(dynamic=True)
+# @torch.compile(dynamic=True)
 def pre_rms_norm(q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
     """Pre rms norm."""
     q = q.to(torch.float32)
@@ -34,7 +34,7 @@ def pre_rms_norm(q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
     return variance
 
 
-@torch.compile(dynamic=True)
+# @torch.compile(dynamic=True)
 def post_rms_norm(q: torch.Tensor, k: torch.Tensor, weight_q: torch.Tensor, weight_k: torch.Tensor,
                   variance: torch.Tensor, eps: float, embed_dim: int, dtype: torch.dtype):
     """Post rms norm."""

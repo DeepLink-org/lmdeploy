@@ -308,10 +308,12 @@ class AscendOpsBackend(DlinferOpsBackend):
     def build_graph_runner(model: torch.nn.Module, model_config: ModelConfig, cache_config: CacheConfig,
                            backend_config: BackendConfig, device: torch.device):
         """Build graph runner."""
-        from .graph_runner import AscendGraphRunner
-        ascend_graph_runner = AscendGraphRunner(model, model_config, cache_config, backend_config, device)
-        AscendOpsBackend.enable_graph = ascend_graph_runner.enable_graph
-        return ascend_graph_runner
+        from lmdeploy.pytorch.backends.cuda.graph_runner import CUDAGraphRunner
+        return CUDAGraphRunner(model, model_config, cache_config, backend_config, device)
+        # from .graph_runner import AscendGraphRunner
+        # ascend_graph_runner = AscendGraphRunner(model, model_config, cache_config, backend_config, device)
+        # AscendOpsBackend.enable_graph = ascend_graph_runner.enable_graph
+        # return ascend_graph_runner
 
     @staticmethod
     def init():

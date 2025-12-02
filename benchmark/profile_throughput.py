@@ -138,18 +138,18 @@ class Engine:
         self.tokenizer = Tokenizer(model_path)
         if isinstance(engine_config, TurbomindEngineConfig):
             from lmdeploy.turbomind import TurboMind
-            tm_model = TurboMind.from_pretrained(model_path, tokenizer=self.tokenizer, engine_config=engine_config)
+            tm_model = TurboMind.from_pretrained(model_path, engine_config=engine_config)
             self.backend = 'turbomind'
         elif isinstance(engine_config, PytorchEngineConfig):
             from lmdeploy.pytorch.engine import Engine as PytorchEngine
-            tm_model = PytorchEngine.from_pretrained(model_path, tokenizer=self.tokenizer, engine_config=engine_config)
+            tm_model = PytorchEngine.from_pretrained(model_path, engine_config=engine_config)
             self.backend = 'pytorch'
 
         self.tm_model = tm_model
         self.pbar = None
 
     async def _inference(self, req_queue: Queue, session_id: int, temperature: float, top_p: float, top_k: int,
-                         stream_output: bool, skip_tokenize: bool, skip_detokenize: bool):
+                         stream_output: bool, skip_tokenize: bool, skip_detokenize: bool, concurrency: int):
         model_inst = self.tm_model.create_instance()
         sess: Session = None
         for prompt, _, output_seqlen, cancel_after, sess in iter(req_queue.get_nowait, None):
@@ -163,7 +163,7 @@ class Engine:
 
             state = DetokenizeState(len(input_ids))
 
-            prev_len = 0
+            n_token = 0
             token_ids = input_ids.copy()
 
             generator = model_inst.async_stream_infer(session_id,
@@ -178,15 +178,13 @@ class Engine:
                                                       stream_output=stream_output)
             try:
                 async for outputs in generator:
-                    n_token = outputs.num_token
-                    if n_token > prev_len:
-                        token_ids += outputs.token_ids[prev_len - n_token:]
-                        if not skip_detokenize:
-                            _, state = self.tokenizer.detokenize_incrementally(token_ids, state)
-                        sess.tick(n_token)
-                        prev_len = n_token
-                        if n_token > cancel_after:
-                            break
+                    n_token += len(outputs.token_ids)
+                    token_ids += outputs.token_ids
+                    if not skip_detokenize:
+                        _, state = self.tokenizer.detokenize_incrementally(token_ids, state)
+                    sess.tick(n_token)
+                    if n_token > cancel_after:
+                        break
                 sess.finish(Session.SUCCESS)
             finally:
                 await generator.aclose()
@@ -196,6 +194,7 @@ class Engine:
                 await model_inst.async_end(session_id)
 
             self.pbar.update(1)
+            session_id += concurrency
 
     def process_request(self, requests, profiler: Profiler, concurrency, temperature, top_p, top_k, stream_output,
                         skip_tokenize, skip_detokenize, cancel_rate):
@@ -219,7 +218,7 @@ class Engine:
         tasks = []
         for i in range(concurrency):
             task = self._inference(req_queue, i, temperature, top_p, top_k, stream_output, skip_tokenize,
-                                   skip_detokenize)
+                                   skip_detokenize, concurrency)
             tasks.append(task)
 
         async def _gather_tasks(tasks):
@@ -306,6 +305,10 @@ def parse_args():
     # pytorch engine args
     pt_group = parser.add_argument_group('PyTorch engine arguments')
     ArgumentHelper.eager_mode(pt_group)
+    ArgumentHelper.dllm_block_length(pt_group)
+    ArgumentHelper.dllm_unmasking_strategy(pt_group)
+    ArgumentHelper.dllm_denoising_steps(pt_group)
+    ArgumentHelper.dllm_confidence_threshold(pt_group)
 
     tp_act = ArgumentHelper.tp(pt_group)
     cache_count_act = ArgumentHelper.cache_max_entry_count(pt_group)
@@ -324,6 +327,7 @@ def parse_args():
     tb_group._group_actions.append(dtype_act)
 
     ArgumentHelper.dp(tb_group)
+    ArgumentHelper.cp(tb_group)
     ArgumentHelper.model_format(tb_group, default='hf')
     ArgumentHelper.num_tokens_per_iter(tb_group)
     ArgumentHelper.max_prefill_iters(tb_group)
@@ -341,6 +345,7 @@ def main():
             max_batch_size=args.concurrency // args.dp,
             tp=args.tp,
             dp=args.dp,
+            cp=args.cp,
             cache_max_entry_count=args.cache_max_entry_count,
             cache_block_seq_len=args.cache_block_seq_len,
             model_format=args.model_format,
@@ -362,6 +367,10 @@ def main():
             quant_policy=args.quant_policy,
             dtype=args.dtype,
             distributed_executor_backend=args.distributed_executor_backend,
+            dllm_block_length=args.dllm_block_length,
+            dllm_unmasking_strategy=args.dllm_unmasking_strategy,
+            dllm_denoising_steps=args.dllm_denoising_steps,
+            dllm_confidence_threshold=args.dllm_confidence_threshold,
         )
 
     if args.use_uvloop:

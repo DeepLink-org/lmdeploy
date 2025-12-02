@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from lmdeploy.pytorch.config import CacheConfig, SchedulerConfig
-from lmdeploy.pytorch.messages import MessageStatus
+from lmdeploy.pytorch.messages import MessageStatus, SequenceMeta
 from lmdeploy.pytorch.paging.scheduler import Scheduler
 
 
@@ -32,8 +32,14 @@ class TestScheduler:
         yield SchedulerConfig(max_batches=4, max_session_len=128, max_request_output_len=64, eviction_type='recompute')
 
     @pytest.fixture
-    def scheduler(self, cache_config, scheduler_config):
-        yield Scheduler(scheduler_config=scheduler_config, cache_config=cache_config)
+    def seq_meta(self, block_size):
+        from lmdeploy.pytorch.strategies.ar.sequence import ARSequenceStrategy
+        strategy = ARSequenceStrategy()
+        yield SequenceMeta(block_size, strategy=strategy)
+
+    @pytest.fixture
+    def scheduler(self, cache_config, scheduler_config, seq_meta):
+        yield Scheduler(scheduler_config=scheduler_config, cache_config=cache_config, seq_meta=seq_meta)
 
     def test_schedule_base(self, scheduler, block_size, num_gpu_blocks):
         block_manager = scheduler.block_manager
@@ -169,9 +175,9 @@ class TestScheduler:
         seq2.update_token_ids(torch.tensor([1] * block_size))
         assert len(scheduler.running) == 2
         scheduler.schedule(is_prefill=False)
-        # seq1: 1 waiting cpu
-        # seq2: 4 running gpu
+        # seq1: 2 running gpu
+        # seq2: 4 waiting cpu
         # seq3: 3 nan
-        assert seq1.status == MessageStatus.WAITING
-        assert seq2.status == MessageStatus.RUNNING
-        assert block_manager.get_num_free_gpu_blocks() == 0
+        assert seq1.status == MessageStatus.RUNNING
+        assert seq2.status == MessageStatus.WAITING
+        assert block_manager.get_num_free_gpu_blocks() == 2

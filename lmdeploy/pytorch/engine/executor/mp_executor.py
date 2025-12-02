@@ -15,7 +15,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from lmdeploy.pytorch.backends.selector import init_backend
-from lmdeploy.pytorch.config import BackendConfig, CacheConfig, DistConfig, MiscConfig, ModelConfig
+from lmdeploy.pytorch.config import BackendConfig, CacheConfig, DistConfig, MiscConfig, ModelConfig, SpecDecodeConfig
 from lmdeploy.utils import get_logger, try_import_deeplink
 
 from .base import ExecutorBase
@@ -224,17 +224,17 @@ class MPExecutor(ExecutorBase):
                  backend_config: BackendConfig,
                  dist_config: DistConfig,
                  misc_config: MiscConfig,
-                 tokenizer: Any,
                  adapters: Dict[str, str] = None,
+                 specdecode_config: SpecDecodeConfig = None,
                  device_type: str = 'cuda'):
         """Initialize Executor."""
         super().__init__(model_path=model_path,
                          model_config=model_config,
                          cache_config=cache_config,
                          backend_config=backend_config,
-                         tokenizer=tokenizer,
                          dist_config=dist_config,
                          misc_config=misc_config,
+                         specdecode_config=specdecode_config,
                          adapters=adapters,
                          device_type=device_type)
 
@@ -266,7 +266,7 @@ class MPExecutor(ExecutorBase):
                        backend_config=backend_config,
                        dist_config=dist_config,
                        misc_config=misc_config,
-                       tokenizer=tokenizer,
+                       specdecode_config=specdecode_config,
                        adapters=adapters,
                        device_type=device_type,
                        log_level=logger.level)
@@ -353,13 +353,13 @@ class MPExecutor(ExecutorBase):
         ret = self.collective_rpc('get_free_mem')
         return ret
 
-    def set_cache_config(self, cache_config: CacheConfig):
+    def set_cache_config(self, cache_config: CacheConfig, spec_cache_config: CacheConfig = None):
         """Set all cache config."""
-        self.collective_rpc('set_cache_config', args=(cache_config, ))
+        self.collective_rpc('set_cache_config', args=(cache_config, spec_cache_config))
 
-    def set_model_config(self, model_config: ModelConfig):
+    def set_model_config(self, model_config: ModelConfig, spec_model_config: ModelConfig = None):
         """Set all cache config."""
-        self.collective_rpc('set_model_config', args=(model_config, ))
+        self.collective_rpc('set_model_config', args=(model_config, spec_model_config))
 
     def build_graph_runner(self):
         """Build graph runner."""
@@ -428,9 +428,9 @@ class MPWorkerWrapper(WorkerWrapperBase):
         model_config: ModelConfig,
         dist_config: DistConfig,
         misc_config: MiscConfig,
+        specdecode_config: SpecDecodeConfig = None,
         adapters: Dict[str, str] = None,
         device_type: str = 'cuda',
-        tokenizer: Any = None,
         log_level: int = 30,
     ):
         super().__init__(
@@ -440,9 +440,9 @@ class MPWorkerWrapper(WorkerWrapperBase):
             model_config=model_config,
             dist_config=dist_config,
             misc_config=misc_config,
+            specdecode_config=specdecode_config,
             adapters=adapters,
             device_type=device_type,
-            tokenizer=tokenizer,
             log_level=log_level,
         )
 
@@ -491,7 +491,7 @@ class ExecutorProc:
         backend_config: BackendConfig,
         dist_config: DistConfig,
         misc_config: MiscConfig,
-        tokenizer: Any,
+        specdecode_config: SpecDecodeConfig = None,
         adapters: Dict[str, str] = None,
         device_type: str = 'cuda',
         log_level: int = 30,
@@ -513,9 +513,9 @@ class ExecutorProc:
                                  model_config=model_config,
                                  dist_config=dist_config,
                                  misc_config=misc_config,
+                                 specdecode_config=specdecode_config,
                                  adapters=adapters,
                                  device_type=device_type,
-                                 tokenizer=tokenizer,
                                  log_level=log_level)
         try_import_deeplink(device_type)
         worker.init_process_group(proc_id)

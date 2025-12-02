@@ -1,12 +1,13 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import asyncio
-from typing import Any, Dict, List
+import gc
+from typing import Any, Dict, List, Optional
 
 from lmdeploy.pytorch.backends.selector import get_backend
-from lmdeploy.pytorch.config import BackendConfig, CacheConfig, DistConfig, MiscConfig, ModelConfig
+from lmdeploy.pytorch.config import BackendConfig, CacheConfig, DistConfig, MiscConfig, ModelConfig, SpecDecodeConfig
 from lmdeploy.pytorch.devices import DeviceContext
+from lmdeploy.pytorch.disagg.conn.protocol import DistServeInitRequest, DistServeKVTransferEndpointInfo
 from lmdeploy.pytorch.disagg.messages import MigrationExecutionBatch
-from lmdeploy.pytorch.disagg.request import DistServeConnectionRequest, DistServeInitRequest
 from lmdeploy.pytorch.distributed import DistContext
 from lmdeploy.pytorch.engine.model_agent import build_model_agent
 from lmdeploy.utils import get_logger
@@ -29,8 +30,8 @@ class WorkerWrapperBase:
         misc_config: MiscConfig,
         adapters: Dict[str, str] = None,
         device_type: str = 'cuda',
-        tokenizer: Any = None,
         log_level: int = 30,
+        specdecode_config: SpecDecodeConfig = None,
     ):
         self.model_path = model_path
         self.model_config = model_config
@@ -38,7 +39,6 @@ class WorkerWrapperBase:
         self.backend_config = backend_config
         self.dist_config = dist_config
         self.misc_config = misc_config
-        self.tokenizer = tokenizer
         self.adapters = adapters
         self.device_type = device_type
         self.log_level = log_level
@@ -46,10 +46,14 @@ class WorkerWrapperBase:
         self.tp = dist_config.tp
         self.world_size = dist_config.world_size
         self.device_type = device_type
-
+        self.specdecode_config = specdecode_config
         logger.setLevel(log_level)
         self.out_que: asyncio.Queue = None
         self._output_loop: asyncio.Task = None
+
+        # frequently gc would cause latency spike
+        # default threshold (700, 10, 10)
+        gc.set_threshold(10000, 100, 100)
 
     def init_process_group(self, rank: int, master_addr: str = None, master_port: str = None):
         """Initialize process group."""
@@ -91,28 +95,30 @@ class WorkerWrapperBase:
         """Build model."""
         self.device_ctx = DeviceContext(device_type=self.device_type)
 
-        self.model_agent = build_model_agent(model_path=self.model_path,
-                                             model_config=self.model_config,
-                                             cache_config=self.cache_config,
-                                             backend_config=self.backend_config,
-                                             misc_config=self.misc_config,
-                                             tokenizer=self.tokenizer,
-                                             device_ctx=self.device_ctx,
-                                             dist_ctx=self.dist_ctx,
-                                             adapters=self.adapters)
+        self.model_agent = build_model_agent(
+            model_path=self.model_path,
+            model_config=self.model_config,
+            cache_config=self.cache_config,
+            backend_config=self.backend_config,
+            misc_config=self.misc_config,
+            device_ctx=self.device_ctx,
+            dist_ctx=self.dist_ctx,
+            adapters=self.adapters,
+            specdecode_config=self.specdecode_config,
+        )
         self.model_agent.build_model()
 
     def get_free_mem(self):
         """Gather free mem."""
         return self.model_agent.get_free_mem()
 
-    def set_cache_config(self, cache_config: CacheConfig):
+    def set_cache_config(self, cache_config: CacheConfig, spec_cache_config: CacheConfig = None):
         """Set all cache config."""
-        self.model_agent.set_cache_config(cache_config)
+        self.model_agent.set_cache_config(cache_config, spec_cache_config)
 
-    def set_model_config(self, model_config: ModelConfig):
+    def set_model_config(self, model_config: ModelConfig, spec_model_config: ModelConfig = None):
         """Set all model config."""
-        self.model_agent.set_model_config(model_config)
+        self.model_agent.set_model_config(model_config, spec_model_config)
 
     def build_graph_runner(self):
         """Build graph runner."""
@@ -129,6 +135,14 @@ class WorkerWrapperBase:
     def warmup(self):
         """warmup."""
         self.model_agent.warmup()
+
+    def sleep(self, level: int = 1):
+        """Sleep."""
+        self.model_agent.sleep(level)
+
+    def wakeup(self, tags: Optional[List[str]] = None):
+        """Wakeup."""
+        self.model_agent.wakeup(tags)
 
     def get_input_processor(self):
         """Build cache engine."""
@@ -174,8 +188,8 @@ class WorkerWrapperBase:
     def p2p_initialize(self, init_request: DistServeInitRequest):
         return self.model_agent.cache_engine.p2p_initialize(init_request)
 
-    def p2p_connect(self, conn_request: List[DistServeConnectionRequest]):
-        return self.model_agent.cache_engine.p2p_connect(conn_request)
+    def p2p_connect(self, remote_engine_id: str, conn_request: List[DistServeKVTransferEndpointInfo]):
+        return self.model_agent.cache_engine.p2p_connect(remote_engine_id, conn_request)
 
     async def migrate(self, inputs: MigrationExecutionBatch):
         return await self.model_agent.cache_engine.migrate(inputs)

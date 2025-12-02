@@ -1,3 +1,4 @@
+import os
 import random
 from time import sleep
 
@@ -7,18 +8,9 @@ from lmdeploy.model import MODELS
 
 
 def get_conda_allcate_prefix(config, model):
-    cuda_prefix = ''
-    tp_num = get_tp_num(config, model)
-    if tp_num is None or tp_num == 8:
-        return cuda_prefix
-    available_cuda = _get_available_cude()
-    if len(available_cuda) < tp_num:
-        raise torch.cuda.OutOfMemoryError
-
-    cuda_prefix = 'CUDA_VISIBLE_DEVICES=' + ','.join(random.sample(available_cuda, tp_num))
-
-    torch.cuda.empty_cache()
-    return cuda_prefix
+    device = os.environ.get('DEVICE', 'cuda')  # Default to cuda if not set
+    handler = _get_device_handler(device)
+    return handler.get_device_prefix(config, model)
 
 
 def get_tp_config(config, model, need_tp):
@@ -60,7 +52,7 @@ def get_command_with_extra(cmd,
     if extra is not None and len(extra) > 0:
         cmd = ' '.join([cmd, extra])
 
-    torch.cuda.empty_cache()
+    _clear_device_cache()
     return cmd
 
 
@@ -110,21 +102,6 @@ def get_model_name(model):
     return model_name.split('-')[0]
 
 
-def _get_available_cude():
-    devices = torch.cuda.device_count()
-
-    available_cuda = []
-    for i in range(devices):
-        if (torch.cuda.utilization(i) > 5):
-            continue
-        if ('no processes are running' not in torch.cuda.list_gpu_processes(i)):
-            continue
-
-        available_cuda.append(str(i))
-
-    return available_cuda
-
-
 def _simple_model_name(model):
     if '/' in model:
         model_name = model.split('/')[1]
@@ -140,4 +117,99 @@ def close_pipeline(pipe):
     pipe.close()
     import gc
     gc.collect()
-    torch.cuda.empty_cache()
+    _clear_device_cache()
+
+
+def _clear_device_cache():
+    """Clear cache based on the current device type."""
+    device = os.environ.get('DEVICE', 'cuda')
+    handler = _get_device_handler(device)
+    handler.clear_cache()
+
+
+def _get_device_handler(device):
+    """Get the appropriate device handler based on device type."""
+    handlers = {
+        'cuda': CudaDeviceHandler(),
+        'ascend': AscendDeviceHandler(),
+    }
+
+    # Return the specific handler if available, otherwise return default cuda handler
+    return handlers.get(device, handlers['cuda'])
+
+
+class DeviceHandler:
+    """Base class for device handlers."""
+
+    def get_device_prefix(self, config, model):
+        """Get device-specific prefix for command execution."""
+        return ''
+
+    def clear_cache(self):
+        """Clear device-specific cache."""
+        pass
+
+    def get_available_devices(self):
+        """Get list of available devices."""
+        return []
+
+
+class CudaDeviceHandler(DeviceHandler):
+    """Handler for CUDA devices."""
+
+    def get_device_prefix(self, config, model):
+        cuda_prefix = ''
+        tp_num = get_tp_num(config, model)
+        if tp_num is None or tp_num == 8:
+            return cuda_prefix
+        available_cuda = self.get_available_devices()
+        if len(available_cuda) < tp_num:
+            raise torch.cuda.OutOfMemoryError
+
+        cuda_prefix = 'CUDA_VISIBLE_DEVICES=' + ','.join(random.sample(available_cuda, tp_num))
+        self.clear_cache()
+        return cuda_prefix
+
+    def clear_cache(self):
+        torch.cuda.empty_cache()
+
+    def get_available_devices(self):
+        devices = torch.cuda.device_count()
+        available_cuda = []
+        for i in range(devices):
+            if (torch.cuda.utilization(i) > 5):
+                continue
+            if ('no processes are running' not in torch.cuda.list_gpu_processes(i)):
+                continue
+            available_cuda.append(str(i))
+        return available_cuda
+
+
+class AscendDeviceHandler(DeviceHandler):
+    """Handler for Ascend devices."""
+
+    def get_device_prefix(self, config, model):
+        ascend_prefix = ''
+        tp_num = get_tp_num(config, model)
+        if tp_num is None or tp_num == 8:
+            return ascend_prefix
+        available_ascend = self.get_available_devices()
+        if len(available_ascend) < tp_num:
+            raise RuntimeError('Not enough Ascend devices available')
+
+        selected_devices = sorted(random.sample(available_ascend, tp_num), key=int)
+        ascend_prefix = 'ASCEND_RT_VISIBLE_DEVICES=' + ','.join(selected_devices)
+        self.clear_cache()
+        return ascend_prefix
+
+    def clear_cache(self):
+        torch.npu.empty_cache()
+
+    def get_available_devices(self):
+        devices = torch.npu.device_count()
+        available_npu = []
+        for i in range(devices):
+            if (torch.npu.utilization(i) > 5):
+                continue
+            available_npu.append(str(i))
+        return available_npu

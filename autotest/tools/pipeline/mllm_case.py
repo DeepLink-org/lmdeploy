@@ -1,4 +1,5 @@
 import json
+import os
 
 import fire
 import numpy as np
@@ -10,7 +11,7 @@ from lmdeploy.vl import load_image
 from lmdeploy.vl.constants import IMAGE_TOKEN
 from lmdeploy.vl.utils import encode_image_base64
 
-gen_config = GenerationConfig(max_new_tokens=500, min_new_tokens=2)
+gen_config = GenerationConfig(max_new_tokens=500, min_new_tokens=10)
 
 PIC1 = 'tiger.jpeg'
 PIC2 = 'human-pose.jpg'
@@ -20,6 +21,32 @@ PIC_REDPANDA = 'redpanda.jpg'
 PIC_PANDA = 'panda.jpg'
 DESC = 'What are the similarities and differences between these two images.'
 DESC_ZH = '两张图有什么相同和不同的地方.'
+
+
+def _is_bf16_supported_by_device():
+    """Check if bf16 is supported based on the current device."""
+    device = os.environ.get('DEVICE', 'cuda')
+    if device == 'ascend':
+        # For Ascend, bf16 support check would be different
+        # Placeholder implementation
+        return True
+    else:
+        # For CUDA and default, use the existing check
+        return is_bf16_supported()
+
+
+def _clear_device_cache():
+    """Clear cache based on the current device type."""
+    device = os.environ.get('DEVICE', 'cuda')
+    if device == 'ascend':
+        try:
+            import torch_npu
+            torch_npu.npu.empty_cache()
+        except ImportError:
+            pass  # torch_npu not available
+    else:
+        import torch
+        torch.cuda.empty_cache()
 
 
 def run_pipeline_mllm_test(model_path, resource_path, tp, backend_type, is_pr_test, extra: object = None):
@@ -33,12 +60,17 @@ def run_pipeline_mllm_test(model_path, resource_path, tp, backend_type, is_pr_te
     if 'turbomind' in backend_type and extra is not None and 'communicator' in extra:
         backend_config.communicator = extra.get('communicator')
 
+    # Add device_type based on DEVICE environment variable
+    device = os.environ.get('DEVICE', '')
+    if device:
+        backend_config.device_type = device
+
     if extra is not None and 'cache-max-entry-count' in extra and extra.get('cache-max-entry-count') is not None:
         backend_config.cache_max_entry_count = extra.get('cache-max-entry-count')
 
     if 'w4' in model_path or ('4bits' in model_path or 'awq' in model_path.lower()):
         backend_config.model_format = 'awq'
-    if not is_bf16_supported():
+    if not _is_bf16_supported_by_device():
         backend_config.dtype = 'float16'
 
     print('backend_config config: ' + str(backend_config))
@@ -101,12 +133,14 @@ def run_pipeline_mllm_test(model_path, resource_path, tp, backend_type, is_pr_te
         if 'qwen' in model_path.lower():
             Qwen_vl_testcase(pipe, resource_path)
 
-    pipe.close()
+    if device == 'ascend':
+        pass
+    else:
+        pipe.close()
     import gc
 
-    import torch
     gc.collect()
-    torch.cuda.empty_cache()
+    _clear_device_cache()
 
 
 def internvl_vl_testcase(pipe, resource_path, lang='en'):
@@ -170,15 +204,26 @@ def internvl_vl_testcase(pipe, resource_path, lang='en'):
         return frame_indices
 
     def load_video(video_path, bound=None, num_segments=32):
-        from decord import VideoReader, cpu
-        vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-        max_frame = len(vr) - 1
-        fps = float(vr.get_avg_fps())
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f'Cannot open video file: {video_path}')
+
+        max_frame = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
         frame_indices = get_index(bound, fps, max_frame, first_idx=0, num_segments=num_segments)
         imgs = []
+
         for frame_index in frame_indices:
-            img = Image.fromarray(vr[frame_index].asnumpy()).convert('RGB')
-            imgs.append(img)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ret, frame = cap.read()
+            if ret:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(rgb_frame).convert('RGB')
+                imgs.append(img)
+
+        cap.release()
         return imgs
 
     video_path = resource_path + '/red-panda.mp4'
@@ -273,14 +318,28 @@ def MiniCPM_vl_testcase(pipe, resource_path):
             idxs = [int(i * gap + gap / 2) for i in range(n)]
             return [length[i] for i in idxs]
 
-        from decord import VideoReader, cpu
-        vr = VideoReader(video_path, ctx=cpu(0))
-        sample_fps = round(vr.get_avg_fps() / 1)  # FPS
-        frame_idx = [i for i in range(0, len(vr), sample_fps)]
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f'Cannot open video file: {video_path}')
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        sample_fps = round(fps / 1)  # FPS
+        frame_idx = [i for i in range(0, total_frames, sample_fps)]
         if len(frame_idx) > MAX_NUM_FRAMES:
             frame_idx = uniform_sample(frame_idx, MAX_NUM_FRAMES)
-        frames = vr.get_batch(frame_idx).asnumpy()
-        frames = [Image.fromarray(v.astype('uint8')) for v in frames]
+
+        frames = []
+        for idx in frame_idx:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if ret:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(Image.fromarray(rgb_frame.astype('uint8')).convert('RGB'))
+
+        cap.release()
         print('num frames:', len(frames))
         return frames
 

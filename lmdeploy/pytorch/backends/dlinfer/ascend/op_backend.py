@@ -14,6 +14,7 @@ from lmdeploy.pytorch.config import BackendConfig, CacheConfig, ModelConfig
 from lmdeploy.pytorch.distributed import get_dist_manager
 from lmdeploy.utils import get_logger
 
+from ..moe import MoeType
 from ..op_backend import DlinferOpsBackend
 
 logger = get_logger('lmdeploy')
@@ -41,6 +42,19 @@ class SocVersion:
     @classmethod
     def is_Ascend910(cls) -> bool:
         return cls.device_name().startswith(cls.Ascend910)
+
+    @classmethod
+    @lru_cache(maxsize=1)
+    def soc_version(cls) -> str:
+        return torch.npu.get_soc_version()
+
+    @classmethod
+    def is_A2(cls) -> bool:
+        return 220 <= cls.soc_version() <= 225
+
+    @classmethod
+    def is_A3(cls) -> bool:
+        return 250 <= cls.soc_version() <= 255
 
 
 class AscendKVQuantMeta:
@@ -94,7 +108,7 @@ class AscendOpsBackend(DlinferOpsBackend):
     half_negative_inf = torch.finfo(torch.float16).min
     total_slots = None
     max_batches = None
-    max_tokens_accros_dp = 0
+    graph_capture_sizes = None
 
     @staticmethod
     def get_name() -> str:
@@ -235,27 +249,90 @@ class AscendOpsBackend(DlinferOpsBackend):
 
             return kv_start_indices, attention_mask
 
-        def get_max_tokens_across_dp():
-            dist_ctx = get_dist_manager().current_context()
-            if dist_ctx.dist_config.dp > 1:
-                total_token_current_rank = torch.sum(step_context.q_seqlens).to(step_context.q_seqlens.dtype)
-                if cls.enable_graph and step_context.is_decoding:
-                    from dlinfer.framework.lmdeploy_ext.cudagraph.ascend_cudagraph import get_ascend_compatible_size
-                    total_token_current_rank_item = total_token_current_rank.item()
-                    total_token_current_rank = torch.tensor(
-                        [get_ascend_compatible_size(total_token_current_rank_item)],
-                        dtype=total_token_current_rank.dtype,
-                        device=total_token_current_rank.device,
-                    )
-                world_size = dist_ctx.dist_config.world_size
-                total_token_buffer = torch.zeros(world_size,
-                                                 dtype=step_context.q_seqlens.dtype,
-                                                 device=torch.npu.current_device())
-                dist.all_gather_into_tensor(total_token_buffer, total_token_current_rank, dist_ctx.ep_gpu_group)
-                max_tokens_accros_dp = torch.max(total_token_buffer).item()
+        def get_tokens_across_dp(dp_size, tp_size, ep_size, ep_group):
+            num_tokens, max_tokens_across_dp = None, None
+            if ep_size <= 1:
+                pass
             else:
-                max_tokens_accros_dp = torch.sum(step_context.q_seqlens).item()
-            return max_tokens_accros_dp
+                is_graph = cls.enable_graph and step_context.is_decoding
+                # get num tokens for running time
+                if is_graph:
+                    from dlinfer.framework.lmdeploy_ext.cudagraph.ascend_cudagraph import get_ascend_compatible_size
+                    total_tokens_current_rank_actual = step_context.q_seqlens.size(0)
+                    num_tokens = get_ascend_compatible_size(total_tokens_current_rank_actual)
+                    total_tokens_current_rank = torch.tensor(
+                        [num_tokens],
+                        dtype=step_context.q_seqlens.dtype,
+                        device=torch.npu.current_device(),
+                    )
+                else:
+                    total_tokens_current_rank = torch.sum(step_context.q_seqlens).to(step_context.q_seqlens.dtype)
+                    num_tokens = total_tokens_current_rank.item()
+                # get max tokens across data parallel ranks
+                if dp_size == 1:
+                    max_tokens_across_dp = num_tokens
+                    return num_tokens, max_tokens_across_dp
+                else:
+                    total_tokens_buffer = torch.zeros([dp_size * tp_size],
+                                                      dtype=step_context.q_seqlens.dtype,
+                                                      device=torch.npu.current_device())
+                    dist.all_gather_into_tensor(total_tokens_buffer, total_tokens_current_rank, ep_group)
+                    max_tokens_across_dp = torch.max(total_tokens_buffer).item()
+            return num_tokens, max_tokens_across_dp
+
+        def get_ep_meta():
+            dist_ctx = get_dist_manager().current_context()
+            dp_size, tp_size, ep_size = dist_ctx.dist_config.dp, dist_ctx.dist_config.tp, dist_ctx.dist_config.ep
+            tp_rank, ep_rank = dist_ctx.attn_tp_group.rank, dist_ctx.ep_rank
+            tp_group = dist_ctx.attn_tp_group.gpu_group
+            ep_group = dist_ctx.ep_gpu_group
+            return dp_size, tp_size, ep_size, tp_rank, ep_rank, tp_group, ep_group
+
+        def get_mc2_token_capacity(tp_size):
+            if cls.graph_capture_sizes:
+                max_num_tokens = min(max(cls.graph_capture_sizes), 512)
+            else:
+                # NOTE: To save memory, we cap the max number of tokens to 512.
+                max_num_tokens = min(cls.max_batches * 1, 512)
+            num_tokens_per_tp_rank = (max_num_tokens + tp_size - 1) // tp_size
+            return num_tokens_per_tp_rank * tp_size
+
+        def select_moe_type(max_tokens_across_dp, dp_size, tp_size, ep_size):
+            if ep_size <= 1:
+                return MoeType.ALLGATHER
+            mc2_token_capacity = get_mc2_token_capacity(tp_size)
+            if SocVersion.is_A2():
+                if max_tokens_across_dp <= mc2_token_capacity and tp_size * dp_size >= 16:
+                    moe_type = MoeType.MC2
+                else:
+                    # TODO Currently, w4a8_dynamic does not support allgatherep, we need use all2all
+                    moe_type = MoeType.ALLGATHER
+            elif SocVersion.is_A3():
+                if max_tokens_across_dp <= mc2_token_capacity:
+                    moe_type = MoeType.MC2
+                else:
+                    moe_type = MoeType.ALLTOALL
+            else:
+                raise ValueError(f'Unsupported soc_version: {SocVersion.soc_version()}')
+
+            if moe_type == MoeType.ALLGATHER and not step_context.is_docding:
+                moe_type = MoeType.ALLGATHER
+            return moe_type
+
+        def update_pad_size(num_tokens, max_tokens_across_dp, tp_size, ep_size, moe_type):
+            if ep_size <= 1:
+                return 0
+            # is_graph = cls.enable_graph and step_context.is_decoding
+            # num_running_tokens = max_tokens_across_dp if is_graph else num_tokens
+            if moe_type == MoeType.ALLGATHER:
+                pad_size = 0
+            elif moe_type == MoeType.ALLTOALL:
+                pad_size = tp_size - num_tokens
+            elif moe_type == MoeType.MC2:
+                pad_size = (max_tokens_across_dp + tp_size - 1) // tp_size * tp_size - num_tokens
+            if isinstance(pad_size, torch.Tensor):
+                pad_size = pad_size.item()
+            return pad_size
 
         q_seqlens_cpu, kv_seqlens_cpu, kv_seqlens_expanded = get_cpu_seqlens(step_context.is_decoding,
                                                                              is_unpaged_prefill)
@@ -267,7 +344,6 @@ class AscendOpsBackend(DlinferOpsBackend):
                                                                                    is_unpaged_prefill, q_seqlens_list,
                                                                                    kv_seqlens_list, max_q_seq_len,
                                                                                    max_kv_seq_len)
-        cls.max_tokens_accros_dp = get_max_tokens_across_dp()
 
         if not cls.enable_graph and step_context.kv_quant_policy == 8:
             record_file = os.getenv('ASCEND_QUANT_RECORD_FILE')
@@ -300,8 +376,27 @@ class AscendOpsBackend(DlinferOpsBackend):
             quant_policy=step_context.kv_quant_policy,
             quant_meta=AscendKVQuantMeta.quant_meta,
         )
-
         step_context.attn_metadata = attn_metadata
+
+        dp_size, tp_size, ep_size, tp_rank, ep_rank, tp_group, ep_group = get_ep_meta()
+        num_tokens, max_tokens_across_dp = get_tokens_across_dp(dp_size, tp_size, ep_size, ep_group)
+        moe_type = select_moe_type(max_tokens_across_dp, dp_size, tp_size, ep_size)
+        pad_size = update_pad_size(num_tokens, max_tokens_across_dp, tp_size, ep_size, moe_type)
+        mlp_meta_cls = cls.get_mlp_metadata_cls()
+        mlp_metadata = mlp_meta_cls(
+            max_tokens_across_dp=max_tokens_across_dp,
+            pad_size=pad_size,
+            dp_size=dp_size,
+            tp_size=tp_size,
+            ep_size=ep_size,
+            tp_rank=tp_rank,
+            ep_rank=ep_rank,
+            tp_group=tp_group,
+            ep_group=ep_group,
+            moe_type=moe_type,
+        )
+        step_context.mlp_metadata = mlp_metadata
+        # torch.npu.synchronize()
         return step_context
 
     @staticmethod
@@ -310,7 +405,38 @@ class AscendOpsBackend(DlinferOpsBackend):
         """Build graph runner."""
         AscendOpsBackend.enable_graph = not backend_config.eager_mode
         AscendOpsBackend.max_batches = cache_config.max_batches
-        from dlinfer.framework.lmdeploy_ext.cudagraph.ascend_cudagraph import AscendGraphRunner
+        from dlinfer.framework.lmdeploy_ext.cudagraph.ascend_cudagraph import (AscendGraphRunner,
+                                                                               get_ascend_compatible_size)
+
+        @lru_cache
+        def _get_graph_capture_sizes(max_batches: int):
+            """Capture batch size.
+
+            Generate compatible sizes up to max_batches (not exceeding it), then add max_batches itself to ensure it can
+            be handled.
+            """
+            if backend_config.eager_mode:
+                return None
+            ret = []
+            batch_size = 1
+
+            # Generate batch sizes and apply get_ascend_compatible_size
+            # Only include sizes that do not exceed max_batches
+            while batch_size <= max_batches:
+                compatible_size = get_ascend_compatible_size(batch_size)
+                if compatible_size > max_batches:
+                    break
+                if not ret or compatible_size > ret[-1]:
+                    ret.append(compatible_size)
+                batch_size = compatible_size + 1
+
+            # Add max_batches itself to ensure it can be handled
+            if max_batches not in ret:
+                ret.append(max_batches)
+            return ret
+
+        AscendOpsBackend.graph_capture_sizes = _get_graph_capture_sizes(cache_config.max_batches)
+
         return AscendGraphRunner(model, model_config, cache_config, backend_config, device)
 
     @staticmethod
@@ -337,6 +463,7 @@ class AscendOpsBackend(DlinferOpsBackend):
     @staticmethod
     def support_ray():
         """Support ray."""
+        # return False
         if not _envs.ascend_set_rt_visable_devices_by_ray:
             os.environ['RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES'] = '1'
         return True

@@ -2,9 +2,8 @@
 import dlinfer.ops as ext_ops
 from torch import Tensor
 
-from . import DlinferDistContext
 
-
-def moe_gating_topk_softmax(router_logits: Tensor, topk: int, dist_ctx: DlinferDistContext):
-    routing_weights, selected_experts = ext_ops.moe_gating_topk_softmax(router_logits, topk, dist_ctx)
+def moe_gating_topk_softmax(router_logits: Tensor, topk: int, pad_size: int, tp_size: int, ep_size: int, tp_rank: int):
+    routing_weights, selected_experts = ext_ops.moe_gating_topk_softmax(router_logits, topk, pad_size, tp_size, ep_size,
+                                                                        tp_rank)
     return routing_weights, selected_experts

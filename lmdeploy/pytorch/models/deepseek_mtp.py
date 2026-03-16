@@ -12,6 +12,7 @@ from lmdeploy.pytorch.nn import (ApplyRotaryEmb, Attention, RMSNorm, RopeType, S
 from lmdeploy.pytorch.nn.linear import (build_colwise_linear, build_down_linear, build_gateup_linear, build_o_proj,
                                         build_rowwise_linear)
 from lmdeploy.pytorch.nn.moe import build_fused_moe
+from lmdeploy.pytorch.nn.rotary_embedding import get_rope_parameters, get_rope_theta
 from lmdeploy.pytorch.weight_loader.model_weight_loader import load_weight
 from lmdeploy.utils import get_logger
 
@@ -130,9 +131,10 @@ class DeepseekV2Attention(DeepseekV2Attention):
 
         self.softmax_scale = self.q_head_dim**(-0.5)
 
-        if config.rope_scaling is not None:
-            mscale_all_dim = config.rope_scaling.get('mscale_all_dim', 0)
-            scaling_factor = config.rope_scaling['factor']
+        rope_scaling = get_rope_parameters(config)
+        if rope_scaling is not None:
+            mscale_all_dim = rope_scaling.get('mscale_all_dim', 0)
+            scaling_factor = rope_scaling.get('factor', 1.0)
             if mscale_all_dim:
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
@@ -351,13 +353,31 @@ class SharedHead(nn.Module):
         return self.norm(hidden_states)
 
 
+def build_deepseek_rotary_embedding(config: PretrainedConfig):
+    """Build deepseek rotary embedding."""
+    emb_type = RopeType.LinearScaling
+    rope_dim = config.qk_rope_head_dim if getattr(config, 'use_mla', True) else (config.hidden_size //
+                                                                                 config.num_attention_heads)
+    rope_max_pos_emb = config.max_position_embeddings
+    rope_base = get_rope_theta(config)
+
+    rope_params = dict(emb_type=emb_type, dim=rope_dim, max_position_embeddings=rope_max_pos_emb, base=rope_base)
+    update_params = build_rotary_params(config)
+    rope_params.update(update_params)
+    return build_rotary_embedding(**rope_params)
+
+
 class DeepSeekMultiTokenPredictorLayer(nn.Module):
 
-    def __init__(self,
-                 config: PretrainedConfig,
-                 layer_idx: int,
-                 dtype: torch.dtype = None,
-                 device: torch.device = None) -> None:
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        layer_idx: int,
+        dtype: torch.dtype = None,
+        device: torch.device = None,
+        decoder_layer_cls=DeepseekV2DecoderLayer,
+        build_rotary_embedding_func=build_deepseek_rotary_embedding,
+    ) -> None:
         super().__init__()
         self.config = config
         self.padding_idx = config.pad_token_id
@@ -384,18 +404,9 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
 
         self.shared_head = SharedHead(config=config, dtype=dtype, device=device)
 
-        self.mtp_block = DeepseekV2DecoderLayer(config, layer_idx=layer_idx, dtype=dtype, device=device)
+        self.mtp_block = decoder_layer_cls(config, layer_idx=layer_idx, dtype=dtype, device=device)
 
-        emb_type = RopeType.LinearScaling
-        rope_dim = config.qk_rope_head_dim if getattr(config, 'use_mla', True) else (config.hidden_size //
-                                                                                     config.num_attention_heads)
-        rope_max_pos_emb = config.max_position_embeddings
-        rope_base = config.rope_theta
-
-        rope_params = dict(emb_type=emb_type, dim=rope_dim, max_position_embeddings=rope_max_pos_emb, base=rope_base)
-        update_params = build_rotary_params(config)
-        rope_params.update(update_params)
-        self.rotary_emb = build_rotary_embedding(**rope_params)
+        self.rotary_emb = build_rotary_embedding_func(config)
 
     def forward(
         self,
@@ -435,7 +446,14 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
 
 class DeepSeekMultiTokenPredictor(nn.Module):
 
-    def __init__(self, config: PretrainedConfig, dtype: torch.dtype = None, device: torch.device = None):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        dtype: torch.dtype = None,
+        device: torch.device = None,
+        decoder_layer_cls=DeepseekV2DecoderLayer,
+        build_rotary_embedding_func=build_deepseek_rotary_embedding,
+    ):
         super().__init__()
         self.config = config
         self.mtp_start_layer_idx = config.num_hidden_layers
@@ -448,6 +466,8 @@ class DeepSeekMultiTokenPredictor(nn.Module):
                 idx,
                 dtype=dtype,
                 device=device,
+                decoder_layer_cls=decoder_layer_cls,
+                build_rotary_embedding_func=build_rotary_embedding_func,
             )
             for idx in range(self.mtp_start_layer_idx, self.mtp_start_layer_idx + self.num_mtp_layers)
         })
@@ -490,17 +510,25 @@ class DeepSeekMultiTokenPredictor(nn.Module):
 
 class DeepseekMTPModel(nn.Module, CudaGraphMixin):
 
-    def __init__(self,
-                 config: PretrainedConfig,
-                 ctx_mgr: StepContextManager,
-                 dtype: torch.dtype = None,
-                 device: torch.device = None):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        ctx_mgr: StepContextManager,
+        dtype: torch.dtype = None,
+        device: torch.device = None,
+        decoder_layer_cls=DeepseekV2DecoderLayer,
+        build_rotary_embedding_func=build_deepseek_rotary_embedding,
+    ):
         super().__init__()
         self.config = config
         self.quantization_config = getattr(config, 'quantization_config', None)
         self.dtype = dtype
         self.ctx_mgr = ctx_mgr
-        self.model = DeepSeekMultiTokenPredictor(config, dtype=dtype, device=device)
+        self.model = DeepSeekMultiTokenPredictor(config,
+                                                 dtype=dtype,
+                                                 device=device,
+                                                 decoder_layer_cls=decoder_layer_cls,
+                                                 build_rotary_embedding_func=build_rotary_embedding_func)
 
         self._load_buffers = dict()
 
